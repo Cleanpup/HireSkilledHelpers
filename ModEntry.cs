@@ -36,7 +36,7 @@ internal sealed class ModEntry : Mod
         this.workerDialogueManager.Register(harmony);
         WorkerExperienceSuppression.Register(harmony);
         this.workerCustomizationManager = new WorkerCustomizationManager(this.Monitor, this.workerShellManager, this.workerBehaviorManager);
-        this.workerControlMenuController = new WorkerControlMenuController(helper.Input, this.workerShellManager, this.workerCustomizationManager, this.workerBehaviorManager);
+        this.workerControlMenuController = new WorkerControlMenuController(helper.Input, this.workerShellManager, this.workerCustomizationManager, this.workerBehaviorManager, () => this.config.OpenBusinessMenuKey);
 
         helper.ConsoleCommands.Add("workerpermit", "Queue Lewis's standalone farmhand-permission cutscene early. Host only; stand on the Farm and close menus to let the visit begin.", this.OnWorkerPermitCommand);
         helper.ConsoleCommands.Add("workers", "Manage hired workers. Use 'workers help' for commands, or 'workers' to open the menu.", this.OnWorkersCommand);
@@ -76,6 +76,11 @@ internal sealed class ModEntry : Mod
                 this.Helper.WriteConfig(this.config);
                 this.workerAccess.SetBypass(this.config.BypassWorkerUnlockEvent);
             });
+            menu.AddKeybind(this.ModManifest, getValue: () => this.config.OpenBusinessMenuKey,
+                setValue: value => this.config.OpenBusinessMenuKey = value,
+                name: () => "Open business menu",
+                tooltip: () => "Choose the key or controller button that opens and closes the business menu. Default: B.",
+                fieldId: "OpenBusinessMenuKey");
             menu.AddBoolOption(this.ModManifest, getValue: () => this.config.BypassWorkerUnlockEvent,
                 setValue: value => this.config.BypassWorkerUnlockEvent = value,
                 name: () => "Skip farmhand permission event",
@@ -208,7 +213,7 @@ internal sealed class ModEntry : Mod
         if (action == "help")
         {
             this.Monitor.Log(
-                $"Press B or use 'workers' to manage your crew. Hire: {WorkerEmploymentTerms.HiringCost}g including today's wage; later {WorkerEmploymentTerms.DailyWage}g/day.\n"
+                $"Press your business menu key (B by default) or use 'workers' to manage your crew. Hire: {WorkerEmploymentTerms.HiringCost}g including today's wage; later {WorkerEmploymentTerms.DailyWage}g/day.\n"
                 + "workerpermit — queue Lewis's standalone permission cutscene early; host on the Farm\n"
                 + "workers status — list IDs, orders, activity and location\n"
                 + "workers hire [default] — hire with custom or default appearance\n"
@@ -357,7 +362,7 @@ internal sealed class ModEntry : Mod
             return;
         IReadOnlyList<WorkerSummarySnapshot> workers = this.workerShellManager.GetWorkerSummaries();
         if (workers.Count == 0)
-            this.Monitor.Log("No workers hired. Press B or use 'workers hire' to hire one.", LogLevel.Info);
+            this.Monitor.Log("No workers hired. Press your business menu key (B by default) or use 'workers hire' to hire one.", LogLevel.Info);
         foreach (WorkerSummarySnapshot worker in workers)
         {
             var activity = this.workerBehaviorManager.GetRuntimeSnapshot(worker.WorkerId);
@@ -406,7 +411,7 @@ internal sealed class ModEntry : Mod
     {
         if (Context.IsMainPlayer)
             return true;
-        this.Monitor.Log("Only the host can hire, assign, pay or dismiss workers. Press B to view the crew.", LogLevel.Info);
+        this.Monitor.Log("Only the host can hire, assign, pay or dismiss workers. Use your business menu key to view the crew.", LogLevel.Info);
         return false;
     }
 }

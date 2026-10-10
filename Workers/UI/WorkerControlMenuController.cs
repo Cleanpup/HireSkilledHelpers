@@ -7,6 +7,7 @@ namespace HireSkilledHelpers.Workers;
 internal sealed class WorkerControlMenuController
 {
     private readonly IInputHelper inputHelper;
+    private readonly Func<SButton> getMenuKey;
     private readonly WorkerShellManager workerShellManager;
     private readonly WorkerCustomizationManager workerCustomizationManager;
     private readonly WorkerBehaviorManager workerBehaviorManager;
@@ -15,9 +16,11 @@ internal sealed class WorkerControlMenuController
         IInputHelper inputHelper,
         WorkerShellManager workerShellManager,
         WorkerCustomizationManager workerCustomizationManager,
-        WorkerBehaviorManager workerBehaviorManager)
+        WorkerBehaviorManager workerBehaviorManager,
+        Func<SButton> getMenuKey)
     {
         this.inputHelper = inputHelper;
+        this.getMenuKey = getMenuKey;
         this.workerShellManager = workerShellManager;
         this.workerCustomizationManager = workerCustomizationManager;
         this.workerBehaviorManager = workerBehaviorManager;
@@ -27,7 +30,7 @@ internal sealed class WorkerControlMenuController
     {
         _ = sender;
 
-        if (e.Button != SButton.B)
+        if (e.Button == SButton.None || e.Button != this.getMenuKey())
         {
             return;
         }

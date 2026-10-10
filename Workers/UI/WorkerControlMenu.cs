@@ -1364,7 +1364,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
 
     private void DrawFooter(SpriteBatch b)
     {
-        string text = Context.IsMainPlayer ? this.feedback : "The host assigns work and pays wages. Press B to close.";
+        string text = Context.IsMainPlayer ? this.feedback : "The host assigns work and pays wages. Use your menu key to close.";
         DrawRect(b, new Rectangle(this.footerBounds.X + 5, this.footerBounds.Y + 8, 4, this.footerBounds.Height - 16), this.feedbackIsError ? Color.DarkRed : Leaf);
         this.DrawText(b, text, new Rectangle(this.footerBounds.X + 18, this.footerBounds.Y + 6, this.payButton.bounds.Left - this.footerBounds.X - Gap - 18, this.footerBounds.Height - 12), this.feedbackIsError ? Color.DarkRed : Ink);
         bool hasWorker = this.selectedWorkerId is not null;
