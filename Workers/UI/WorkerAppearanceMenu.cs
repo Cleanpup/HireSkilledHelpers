@@ -325,6 +325,11 @@ internal sealed class WorkerAppearanceMenu : IClickableMenu
             return;
         }
 
+        // TextBox receives typing through the keyboard dispatcher. Do not let
+        // menu bindings (E by default) close or navigate the menu while naming.
+        if (this.nameBox.Selected)
+            return;
+
         base.receiveKeyPress(key);
     }
 
