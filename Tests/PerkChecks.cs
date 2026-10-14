@@ -80,6 +80,122 @@ internal static class PerkChecks
         var second = new WorkerRosterEntry();
         Check(WorkerPerkPolicy.MaximumStamina(second.Experience) == 270 && WorkerPerkPolicy.MaximumHealth(second.Experience) == 100,
             "Perks remain independent between workers");
-        Console.WriteLine("Level-five worker perk checks passed.");
+        OverhaulChecks();
+        Console.WriteLine("Level-five, seven and ten perk checks passed: stacking, authority, switching, HP, persistence and production.");
     }
+    private static void OverhaulChecks()
+    {
+        var entry = new WorkerRosterEntry();
+        foreach (int level in new[] { 10, 7, 5, 10 })
+        {
+            int prior = entry.Experience.Farming;
+            Check(!WorkerExperiencePolicy.TrySetTestLevel(entry, level, false, true)
+                && entry.Experience.Farming == prior, "Client cannot change testing levels");
+            Check(!WorkerExperiencePolicy.TrySetTestLevel(entry, level, true, false), "Testing level requires loaded world");
+            entry.Perks.Combat = 2;
+            Check(WorkerExperiencePolicy.TrySetTestLevel(entry, level, true, true), "Host can set supported test levels");
+            Check(Enum.GetValues<WorkerSkill>().All(skill => WorkerExperiencePolicy.GetLevel(WorkerPerkPolicy.Experience(entry.Experience, skill)) == level), "Every worker skill has exact requested level including decreases");
+            Check(entry.Perks.Combat == 2 && WorkerPerkPolicy.Active(entry, WorkerSkill.Combat) == (level == 10 ? 2 : 0), "Test level retains choices but respects unlock gates");
+        }
+        Check(!WorkerExperiencePolicy.TrySetTestLevel(entry, 6, true, true), "Unsupported testing level rejected");
+        entry = new();
+        foreach (WorkerSkill skill in Enum.GetValues<WorkerSkill>())
+        {
+            Check(!WorkerPerkPolicy.TrySelect(entry, skill, 1, true, true), "Locked selection rejected");
+            entry.Perks.Set(skill, 2);
+            Check(WorkerPerkPolicy.Active(entry, skill) == 0, "Saved/forged choice cannot bypass XP gate");
+        }
+        entry.Experience.Combat = WorkerExperiencePolicy.GetThreshold(7) - 1;
+        Check(!WorkerPerkPolicy.HasMovementPerk(entry.Experience), "Level six has no speed bonus");
+        entry.Experience.Combat++;
+        Check(WorkerPerkPolicy.HasMovementPerk(entry.Experience), "Combat alone unlocks shared speed at seven");
+        var notice = new WorkerNoticePolicy();
+        Check(!notice.Observe("one", WorkerTaskKind.Idle), "Initial idle load is silent");
+        Check(!notice.Observe("one", WorkerTaskKind.CollectForage), "Starting work is silent");
+        Check(notice.Observe("one", WorkerTaskKind.Idle), "Finishing work announces idle");
+        Check(!notice.Observe("one", WorkerTaskKind.Idle), "Repeated idle observation does not spam");
+        notice.Observe("one", WorkerTaskKind.Fish);
+        Check(notice.ObserveRuntime("one", true), "Night return announces idle even if daily job remains assigned");
+        Check(!notice.Observe("one", WorkerTaskKind.Fish) && !notice.ObserveRuntime("one", true), "Unchanged assignment save cannot repeat night notice");
+        notice.ObserveRuntime("one", false);
+        Check(notice.ObserveRuntime("one", true), "Another completed work interval can notify again");
+        notice.Clear();
+        Check(!notice.Observe("one", WorkerTaskKind.Idle), "New save cannot inherit old notices");
+        foreach (string berry in new[] { "(O)296", "(O)410" })
+        {
+            Check(WorkerBerryPolicy.CanHarvest(1, false, false, true, true, berry), "Ready salmon/blackberry bush eligible");
+            Check(!WorkerBerryPolicy.CanHarvest(1, false, false, false, true, berry), "Picked berry bush not eligible");
+            Check(!WorkerBerryPolicy.CanHarvest(1, false, false, true, false, berry), "Out-of-season berry bush not eligible");
+            Check(!WorkerBerryPolicy.CanHarvest(1, true, false, true, true, berry), "Town/decorative bush not eligible");
+        }
+        Check(!WorkerBerryPolicy.CanHarvest(3, false, false, true, true, "(O)815")
+            && !WorkerBerryPolicy.CanHarvest(4, false, false, true, true, "(O)73"), "Tea/walnut harvests excluded");
+        Check(WorkerBerryPolicy.Yield(0) == 1 && WorkerBerryPolicy.Yield(7) == 2 && WorkerBerryPolicy.Yield(10) == 3, "Berries use worker level for vanilla yield");
+        Check(WorkerBerryPolicy.BehindBeachBridge(false, 65, 18)
+            && !WorkerBerryPolicy.BehindBeachBridge(true, 65, 18)
+            && !WorkerBerryPolicy.BehindBeachBridge(false, 50, 18), "Beach access blocks only locked eastern forage");
+        int ten = WorkerExperiencePolicy.GetThreshold(10);
+        entry.Experience = new() { Farming = ten, Mining = ten, Fishing = ten, Foraging = ten, Combat = ten };
+        entry.Perks = new();
+        foreach (WorkerSkill skill in Enum.GetValues<WorkerSkill>())
+        {
+            Check(!WorkerPerkPolicy.TrySelect(entry, skill, 1, false, true), "Farmhand cannot select");
+            Check(!WorkerPerkPolicy.TrySelect(entry, skill, 1, true, false), "Selection requires world");
+            Check(!WorkerPerkPolicy.TrySelect(entry, skill, 3, true, true), "Only two choices per tree");
+            Check(WorkerPerkPolicy.TrySelect(entry, skill, 1, true, true), "Host can select unlocked perk");
+        }
+        Check(Enum.GetValues<WorkerSkill>().All(skill => WorkerPerkPolicy.Active(entry, skill) == 1), "All five skills stack across profession");
+        Check(WorkerPerkPolicy.TrySelect(entry, WorkerSkill.Foraging, 2, true, true)
+            && WorkerPerkPolicy.Active(entry, WorkerSkill.Foraging) == 2
+            && WorkerPerkPolicy.Active(entry, WorkerSkill.Farming) == 1, "Switch replaces only chosen tree");
+        Check(WorkerPerkPolicy.HarvestMultiplier(WorkerPerkPolicy.Active(entry, WorkerSkill.Foraging), true) == 1
+            && WorkerPerkPolicy.IridiumHarvest(WorkerPerkPolicy.Active(entry, WorkerSkill.Foraging), true), "Forage quality excludes quantity");
+        Check(WorkerPerkPolicy.HarvestMultiplier(1, true) == 5 && !WorkerPerkPolicy.IridiumHarvest(1, true)
+            && WorkerPerkPolicy.HarvestMultiplier(2, false) == 3 && !WorkerPerkPolicy.IridiumHarvest(2, false), "Harvest perks are exclusive");
+        var clone = JsonSerializer.Deserialize<WorkerRosterEntry>(JsonSerializer.Serialize(entry))!.Clone();
+        clone.Perks.Farming = 2;
+        Check(entry.Perks.Farming == 1 && clone.Perks.Foraging == 2, "Choices persist and clone independently");
+        var legacy = JsonSerializer.Deserialize<WorkerRosterEntry>("{}")!.Clone();
+        Check(Enum.GetValues<WorkerSkill>().All(skill => legacy.Perks.Get(skill) == 0), "Legacy roster starts unselected");
+        legacy.Perks.Farming = 999;
+        Check(legacy.Clone().Perks.Farming == 0, "Invalid saved choices normalize");
+
+        entry.Perks.Combat = 2;
+        Check(WorkerPerkPolicy.MaximumHealth(entry.Experience, entry.Perks) == 800, "Juggernaut stacks with level five");
+        entry.CombatHealth = 397; entry.CombatMaxHealth = 800;
+        for (int i = 0; i < 20; i++)
+        {
+            entry.Perks.Combat = 1; WorkerPerkPolicy.SynchronizeHealth(entry);
+            entry = JsonSerializer.Deserialize<WorkerRosterEntry>(JsonSerializer.Serialize(entry))!.Clone();
+            entry.Perks.Combat = 2; WorkerPerkPolicy.SynchronizeHealth(entry);
+            Check(entry.CombatHealth == 397, "Repeated switching and save/reload cannot heal through rounding");
+        }
+        entry.CombatHealth = 0;
+        entry.Perks.Combat = 1; WorkerPerkPolicy.SynchronizeHealth(entry);
+        entry.Perks.Combat = 2; WorkerPerkPolicy.SynchronizeHealth(entry);
+        Check(entry.CombatHealth == 0, "Switch cannot revive defeated worker");
+
+        foreach (string area in new[] { "Mines", "SkullCavern", "Volcano" })
+        {
+            var seen = new HashSet<string>();
+            for (int seed = 0; seed < 1000; seed++)
+            {
+                var normal = WorkerMiningLootCatalog.Roll(area, new Random(seed), 0, 0);
+                var doubled = WorkerMiningLootCatalog.Roll(area, new Random(seed), 0, 0, 1);
+                Check(normal.Count == doubled.Count && normal.Zip(doubled).All(pair => pair.First.ItemId == pair.Second.ItemId
+                    && pair.Second.Stack == pair.First.Stack * 2), "Double mining changes quantity, preserves normal gates");
+                var geodes = WorkerMiningLootCatalog.Roll(area, new Random(seed), 0, 0, 2);
+                Check(geodes.All(item => item.ItemId is "(O)535" or "(O)536" or "(O)537" or "(O)749"), "Specialist produces only geodes");
+                Check(geodes.Sum(item => item.Stack) == normal.Sum(item => item.Stack) * 2, "Specialist doubles total production rate");
+                foreach (var drop in geodes)
+                {
+                    Check(WorkerExplorationPolicy.IsAllowedPendingLoot(drop), "Specialist loot retains valid provenance/storage");
+                    if (drop.ItemId is "(O)535" or "(O)536" or "(O)537" or "(O)749")
+                    { seen.Add(drop.ItemId); Check(drop.Stack > 0, "Specialist produces positive geode units"); }
+                }
+            }
+            Check(seen.Count == 4, "All four geode types available at depth zero in every expedition");
+        }
+    }
+
 }

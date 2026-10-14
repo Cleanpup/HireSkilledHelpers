@@ -133,7 +133,7 @@ internal sealed class WorkerExplorationManager
             foreach (char c in workerId + area) seed = unchecked(seed * 31 + c);
             List<WorkerExplorationLoot> loot = mining
                 ? WorkerMiningLootCatalog.Roll(area, new Random(seed), Game1.MasterPlayer.deepestMineLevel,
-                    Game1.MasterPlayer.team.sharedDailyLuck.Value)
+                    Game1.MasterPlayer.team.sharedDailyLuck.Value, this.shell.GetActivePerk(workerId, WorkerSkill.Mining))
                 : WorkerExplorationPolicy.RollLoot(area, new Random(seed), Game1.MasterPlayer.deepestMineLevel,
                     Game1.MasterPlayer.mailReceived.Contains("slimeHutchBuilt"));
             if (!this.shell.TryCompleteExploration(workerId, progress, loot))

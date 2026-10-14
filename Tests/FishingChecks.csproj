@@ -11,6 +11,7 @@
     <Compile Include="../Workers/Model/WorkerStaminaState.cs" />
     <Compile Include="../Workers/Skills/WorkerStaminaPolicy.cs" />
     <Compile Include="../Workers/Skills/WorkerPerkPolicy.cs" />
+    <Compile Include="../Workers/Skills/WorkerPerkChoices.cs" />
     <Compile Include="../Workers/Fishing/WorkerFishingShorePolicy.cs" />
     <Compile Include="../Workers/Model/WorkerFishingProgress.cs" />
     <Compile Include="../Workers/Fishing/WorkerFishingPolicy.cs" />
@@ -27,6 +28,8 @@
     <Compile Include="../Workers/Model/WorkerEmploymentTerms.cs" Link="WorkerEmploymentTerms.cs" />
     <Compile Include="../Workers/Jobs/WorkerCombatAreaCatalog.cs" Link="WorkerCombatAreaCatalog.cs" />
     <Compile Include="../Workers/Jobs/WorkerMiningPolicy.cs" Link="WorkerMiningPolicy.cs" />
+    <Compile Include="../Workers/Jobs/WorkerNoticePolicy.cs" />
+    <Compile Include="../Workers/Jobs/WorkerBerryPolicy.cs" />
     <Compile Include="../Workers/Jobs/WorkerTaskPolicy.cs" Link="WorkerTaskPolicy.cs" />
     <Compile Include="../Workers/Combat/WorkerCombatPolicy.cs" Link="WorkerCombatPolicy.cs" />
     <Compile Include="../Workers/Combat/WorkerCombatTilePolicy.cs" Link="WorkerCombatTilePolicy.cs" />

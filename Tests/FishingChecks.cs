@@ -107,3 +107,32 @@ Check(savedCustomFarmLoot.PendingCatches.Count == 1 && savedCustomFarmLoot.Clone
     "Custom farm catches must survive JSON reload and cloning without a runtime species registration");
 Check(!WorkerFishingCatchCatalog.IsAllowed("(O)Example.CustomFarm_Fish"), "Saved marker must not authorize a new unvalidated catch");
 Console.WriteLine("Custom farm fish save/reload checks passed.");
+
+// Rate changes consume actual elapsed minutes, retain charged casts, and never duplicate payouts.
+foreach (int choice in new[] { 0, 1, 2 })
+{
+    int minutes = choice == 1 ? 15 : choice == 2 ? 60 : 30;
+    var fisher = new WorkerRosterEntry { Profession = WorkerProfession.Fisher, AssignedTask = WorkerTaskKind.Fish,
+        Experience = new() { Fishing = 15000 }, Perks = new() { Fishing = choice },
+        Fishing = new() { Day = 12, Minutes = minutes - 1 } };
+    Check(WorkerPerkPolicy.FishingMinutes(fisher) == minutes, "Perk cadence incorrect");
+    WorkerFishingPolicy.TryBeginCast(fisher, 12, true, true, true);
+    Check(!WorkerFishingPolicy.TryQueueCatch(fisher, fisher.Fishing.Clone(), new() { ItemId = "(O)145" }, 12, true, true, true), "Early perk payout");
+    fisher.Fishing.Minutes++;
+    var pending = fisher.Fishing.Clone();
+    Check(WorkerFishingPolicy.TryQueueCatch(fisher, pending, new() { ItemId = "(O)145" }, 12, true, true, true), "Timed perk payout failed");
+    Check(fisher.Experience.Fishing == 15013 && fisher.Fishing.PendingCatches.Count == 1, "Perk credited catch/XP incorrectly");
+    Check(!WorkerFishingPolicy.TryQueueCatch(fisher, pending, new() { ItemId = "(O)145" }, 12, true, true, true), "Perk duplicate payout");
+}
+foreach (string season in new[] { "spring", "summer", "fall", "winter" })
+foreach (bool rain in new[] { false, true })
+foreach (int time in new[] { 600, 1100, 1600, 1900, 2350 })
+{
+    // Fake prices deliberately favor catfish; dry-day gates must still exclude it.
+    int Price(string id) => id == "(O)143" ? 10000 : int.Parse(id[3..]);
+    var pool = WorkerFishingCatchCatalog.Eligible("Forest", season, time, rain);
+    var best = WorkerFishingCatchCatalog.BestCatch("Forest", season, time, rain, Price);
+    Check(pool.Count == 0 ? best is null : best is not null && pool.Contains(best.ItemId)
+        && Price(best.ItemId) == pool.Max(Price), "Prize fish violates eligible pool or price ordering");
+}
+Console.WriteLine("Fishing capstones: cadence, completion, XP, duplicates and eligible prize selection pass.");

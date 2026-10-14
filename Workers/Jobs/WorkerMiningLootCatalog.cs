@@ -22,7 +22,7 @@ internal static class WorkerMiningLootCatalog
     {
         if (!WorkerExplorationAreaCatalog.IsValid(area) || string.IsNullOrEmpty(itemId)) return false;
         string id = itemId.StartsWith("(O)", StringComparison.Ordinal) ? itemId[3..] : itemId;
-        if (id is "378" or "380" or "384" or "382" or "66" or "68" or "62" or "70" or "60" or "64" or "72" or "74" or "749") return true;
+        if (id is "378" or "380" or "384" or "382" or "66" or "68" or "62" or "70" or "60" or "64" or "72" or "74" or "749" or "535" or "536" or "537") return true;
         return area switch
         {
             WorkerExplorationAreaCatalog.Mines => id is "535" or "536" or "537",
@@ -46,7 +46,7 @@ internal static class WorkerMiningLootCatalog
         throw new InvalidOperationException("Mining reward pool has no eligible item.");
     }
 
-    public static List<WorkerExplorationLoot> Roll(string area, Random random, int deepestMineLevel, double dailyLuck)
+    public static List<WorkerExplorationLoot> Roll(string area, Random random, int deepestMineLevel, double dailyLuck, int perk = 0)
     {
         if (!WorkerExplorationAreaCatalog.IsValid(area)) throw new ArgumentOutOfRangeException(nameof(area));
         ArgumentNullException.ThrowIfNull(random);
@@ -94,6 +94,16 @@ internal static class WorkerMiningLootCatalog
             _ => 0,
         };
         if (shardChance > 0 && random.NextDouble() < shardChance * luckFactor) Add("74");
+        if (perk == 2)
+        {
+            int geodeUnits = result.Sum(item => item.Stack) * 2;
+            int[] counts = new int[4];
+            for (int unit = 0; unit < geodeUnits; unit++) counts[random.Next(4)]++;
+            result.Clear();
+            string[] types = { "535", "536", "537", "749" };
+            for (int index = 0; index < types.Length; index++) if (counts[index] > 0) Add(types[index], counts[index]);
+        }
+        if (perk == 1) foreach (var item in result) item.Stack *= 2;
         return result;
     }
 }

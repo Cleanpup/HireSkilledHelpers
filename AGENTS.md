@@ -37,6 +37,8 @@
 - Storage choices belong to each worker, including combat/exploration/dismissal delivery; schema 4 migrates shared choices from older and combat schema-3 saves.
 - `WorkerStaminaPolicy` owns the default 270-point pool, vanilla uncharged tool/cast costs using worker skill levels, and idle recovery. Charge validated tool impacts (each hit), not windups/draw hooks; swords, scythes, harvesting and picking up forage/loose gems are free. Fishing saves its charged cast flag with progress. Save/mirror stamina per worker; only the host may spend or recover it. Exhausted workers keep their assignment and resume after resting; menu/event time cannot recover energy.
 - `WorkerPerkPolicy` derives automatic level-five Endurance (any noncombat work skill, 540 stamina once) and Vitality (Combat, 200 HP) from worker XP. Preserve remaining fractions on unlock/reload and use worker maxima in recovery, contact damage, saves and displays. Fighter is the display label; keep the CombatWorker saved enum stable.
+- `WorkerPerkChoices` saves one optional level-ten choice per skill; `WorkerPerkPolicy` gates effects by XP, independent of profession. Any skill at seven grants one 75% movement bonus. The dedicated Perks tab owns free host-only switching; health switches preserve fractional HP (including saved rounding remainder). Apply harvest bonuses once before storage, mining bonuses only to independent production, and fishing cadence at both simulation and payout validation. Prize fishing exhaustively chooses eligible highest base-price fish, with no legendary/quest or location/time/weather bypass.
+- Natural ready medium berry bushes (Salmonberry/Blackberry) join Collect forage targets. Revalidate identity/readiness at impact, use worker Foraging yield/perks and storage, and clear the net ready state once; never invoke vanilla bush reward callbacks that credit player XP or quests. Locked eastern Beach forage triggers one brief bridge warning per day and is skipped until repaired. Worker assignment/finished-return transitions trigger brief idle HUD notices without repeated-save/load spam.
 - Completed daytime orders switch to saved Idle for Farm wandering; `NextDayTask` and `CompletedTaskDay` restore the original order the next morning, never on a same-day reload. Explicit job/area changes clear the remembered order. Stamina rests and dungeon-floor waiting do not complete an order.
 - Host-owned profession changes use the normal Idle transition under the old role before switching, cancel current/remembered orders, and preserve identity, XP/perks, current vitals, wages, storage and finished loot. Choosing the same role is a no-op. Pending rewards remain deliverable regardless of the new profession.
 - Treat legacy roster saves as supported input. Avoid duplicate workers and repeated daily charges.
@@ -82,6 +84,9 @@ These are registered by this mod in `ModEntry.cs`, so enter them directly withou
 
 ```text
 workerstatus
+workers level5
+workers level7
+workers level10
 spawn
 spawn d
 delete
@@ -91,6 +96,7 @@ workers explore-area <id> <mines|skull|volcano>
 ```
 
 - `workerpermit` queues the standalone permission cutscene early or replays it, host only while on the Farm. Close menus and stand still on clear ground for it to begin. Actual completion/skip grants permission; the command never directly unlocks.
+- `workers level5`, `workers level7`, `workers level10` are host-only test overrides setting all hired workers’ five skills to the exact level. They persist worker XP and refresh automatic perks; player XP is untouched and capstones still require selection.
 - `workerstatus` reports the primary worker and configured worker count.
 - `spawn` opens appearance customization; saving adds a worker. `spawn d` adds one with the default appearance.
 - `delete` removes all worker shells and clears the saved roster.

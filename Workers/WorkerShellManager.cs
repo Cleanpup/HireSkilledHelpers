@@ -29,6 +29,7 @@ internal sealed class WorkerShellManager
     private readonly Dictionary<string, NPC> clientAppearanceWorkers = new(StringComparer.OrdinalIgnoreCase);
     private string? lastMirrorPayload;
     private int nextWorkerNumber = 1;
+    private readonly WorkerNoticePolicy notices = new();
 
     public WorkerShellManager(IModHelper helper, IManifest manifest, IMonitor monitor, Func<bool> featuresAvailable)
     {
@@ -112,6 +113,7 @@ internal sealed class WorkerShellManager
 
         this.savedWorkers.Clear();
         this.savedWorkers.AddRange(this.LoadRosterEntries());
+        this.notices.Clear();
         this.RemoveOrphanedWorkerShells();
         this.RebuildAllGeneratedSpriteSheets();
         this.PersistRoster();
@@ -336,6 +338,44 @@ internal sealed class WorkerShellManager
     public WorkerSkillExperience GetWorkerExperience(string workerId)
         => this.GetWorkerEntry(workerId)?.Experience?.Clone() ?? new WorkerSkillExperience();
 
+    public bool TrySetAllWorkerTestLevels(int level, out string message)
+    {
+        if (!this.CanManageWorkers(out message)) return false;
+        if (level is not (5 or 7 or 10)) { message = "Choose level 5, 7 or 10."; return false; }
+        if (this.savedWorkers.Count == 0) { message = "No hired workers to update."; return false; }
+        foreach (WorkerRosterEntry entry in this.savedWorkers)
+        {
+            WorkerExperiencePolicy.TrySetTestLevel(entry, level, Context.IsMainPlayer, Context.IsWorldReady);
+            ApplyWorkerPerks(entry);
+            if (this.TryGetWorker(entry.WorkerId, out NPC? worker) && worker is not null)
+                worker.addedSpeed = WorkerPerkPolicy.HasMovementPerk(entry.Experience) ? worker.speed * .75f : 0;
+        }
+        this.PersistRoster();
+        message = $"Set all five skills to level {level} for {this.savedWorkers.Count} hired workers. Saved perk choices are retained; level-ten effects only apply at level ten.";
+        return true;
+    }
+
+    public int GetActivePerk(string workerId, WorkerSkill skill)
+        => this.GetWorkerEntry(workerId) is { } entry ? WorkerPerkPolicy.Active(entry, skill) : 0;
+
+    public int GetFishingMinutes(string workerId)
+        => this.GetWorkerEntry(workerId) is { } entry ? WorkerPerkPolicy.FishingMinutes(entry) : 30;
+
+    public bool HasMovementPerk(string workerId)
+        => WorkerPerkPolicy.HasMovementPerk(this.GetWorkerEntry(workerId)?.Experience);
+
+    public bool TrySelectPerk(string workerId, WorkerSkill skill, int choice, out string message)
+    {
+        if (!this.CanManageWorkers(out message)) return false;
+        if (this.GetWorkerEntry(workerId) is not { } entry
+            || !WorkerPerkPolicy.TrySelect(entry, skill, choice, Context.IsMainPlayer, Context.IsWorldReady))
+        { message = "Reach level 10 in this skill to choose a perk."; return false; }
+        ApplyWorkerPerks(entry);
+        this.PersistRoster();
+        message = $"{entry.DisplayName}: {WorkerPerkPolicy.Name(skill, choice)} applied. Switch anytime for free.";
+        return true;
+    }
+
     public WorkerStaminaState GetWorkerStamina(string workerId)
     {
         WorkerRosterEntry? entry = this.GetWorkerEntry(workerId);
@@ -345,18 +385,12 @@ internal sealed class WorkerShellManager
     }
 
     public int GetWorkerMaxHealth(string workerId)
-        => WorkerPerkPolicy.MaximumHealth(this.GetWorkerEntry(workerId)?.Experience);
+        => WorkerPerkPolicy.MaximumHealth(this.GetWorkerEntry(workerId)?.Experience, this.GetWorkerEntry(workerId)?.Perks);
 
     private static bool ApplyWorkerPerks(WorkerRosterEntry entry)
     {
         bool changed = WorkerStaminaPolicy.SynchronizeMaximum(entry.Stamina, WorkerPerkPolicy.MaximumStamina(entry.Experience));
-        int maximumHealth = WorkerPerkPolicy.MaximumHealth(entry.Experience);
-        if (entry.CombatHealth >= 0 && entry.CombatMaxHealth > 0 && entry.CombatMaxHealth != maximumHealth)
-        {
-            entry.CombatHealth = WorkerCombatPolicy.NormalizeHealth(entry.CombatHealth, entry.CombatMaxHealth, maximumHealth);
-            entry.CombatMaxHealth = maximumHealth;
-            changed = true;
-        }
+        changed |= WorkerPerkPolicy.SynchronizeHealth(entry);
         return changed;
     }
 
@@ -536,6 +570,8 @@ internal sealed class WorkerShellManager
     {
         if (!Context.IsWorldReady || !Context.IsMainPlayer || this.GetWorkerEntry(workerId) is not WorkerRosterEntry entry)
             return;
+        if (entry.LastCombatHealthDay != Game1.Date.TotalDays || health <= 0)
+            entry.CombatHealthRemainder = 0;
         entry.CombatHealth = WorkerCombatPolicy.ClampHealth(health, maximum);
         entry.CombatMaxHealth = maximum;
         entry.LastCombatHealthDay = Game1.Date.TotalDays;
@@ -853,6 +889,7 @@ internal sealed class WorkerShellManager
         this.clientAppearanceWorkers.Clear();
         this.RebuildAllGeneratedSpriteSheets();
         this.RefreshClientAppearances();
+        this.NotifyIdleTransitions();
     }
 
     /// <summary>Farm modData is replicated by vanilla; farmhands only rebuild local display textures.</summary>
@@ -1101,6 +1138,7 @@ internal sealed class WorkerShellManager
 
     public void Reset()
     {
+        this.notices.Clear();
         this.savedWorkers.Clear();
         this.detachedWorkers.Clear();
         this.clientAppearanceWorkers.Clear();
@@ -1243,6 +1281,21 @@ internal sealed class WorkerShellManager
         return normalizedEntries;
     }
 
+    public void ObserveRuntimeIdle(string workerId, bool idle)
+    {
+        if (!Context.IsWorldReady || !Context.IsMainPlayer || this.GetWorkerEntry(workerId) is not { } entry) return;
+        if (this.notices.ObserveRuntime(workerId, idle))
+            Game1.addHUDMessage(new HUDMessage($"{entry.DisplayName} has gone idle.", 3500f) { noIcon = true });
+    }
+
+    private void NotifyIdleTransitions()
+    {
+        this.notices.Retain(this.savedWorkers.Select(entry => entry.WorkerId));
+        foreach (var entry in this.savedWorkers)
+            if (this.notices.Observe(entry.WorkerId, entry.AssignedTask))
+                Game1.addHUDMessage(new HUDMessage($"{entry.DisplayName} has gone idle.", 3500f) { noIcon = true });
+    }
+
     private void PersistRoster()
     {
         if (!Context.IsWorldReady || !Context.IsMainPlayer)
@@ -1250,6 +1303,7 @@ internal sealed class WorkerShellManager
             return;
         }
 
+        this.NotifyIdleTransitions();
         WorkerRosterSaveData saveData = this.GetRosterSnapshot();
         this.helper.Data.WriteSaveData(this.rosterSaveDataKey, saveData);
         string payload = JsonSerializer.Serialize(saveData);

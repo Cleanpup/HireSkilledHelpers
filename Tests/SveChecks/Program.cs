@@ -88,6 +88,24 @@ Check(WorkerFishingStorage.TryDeliver(progress,null,new Monitor(),()=>writes++,o
 Check(WorkerFishingStorage.TryDeliver(progress,null,new Monitor(),()=>writes++,out _) && WorkerItemStorage.Delivered.Count == 1, "Duplicate delivery");
 WorkerSveIntegration.Initialize(new Registry(false));
 Check(WorkerFishingAreaCatalog.Areas.Count == 6 && WorkerFishingAreaCatalog.AccessReason(WorkerSveIntegration.ForestWest) is not null, "Removing SVE did not disable destinations");
+// Prize mode must enumerate every candidate, ignoring bite odds but keeping all eligibility gates.
+bridge.Season = Season.Spring; bridge.Rain = false; Game1.timeOfDay = 1200;
+int Price(string id) => id == kitty ? 900 : id == puppy ? 400 : 100;
+WorkerFishingCatch? Prize() => WorkerLocationFishing.BestCatch(bridge, new(10,10), new(13,10), 10, 1, new Random(1), Price);
+Set(new() { ItemId = butter }, new() { RandomItemId = new() { butter, puppy }, Chance = .00001f });
+Check(Prize()?.ItemId == puppy, "Prize must search all random IDs regardless of chance");
+Set(new() { ItemId = butter }, new() { ItemId = kitty, Season = Season.Winter });
+Check(Prize()?.ItemId == butter, "Prize bypassed season");
+Set(new() { ItemId = butter, IsBossFish = true }, new() { ItemId = puppy, CatchLimit = 1 });
+Check(Prize() is null, "Prize allowed special/limited fish");
+Set(new() { ItemId = butter }, new() { ItemId = puppy, BobberPosition = new(0,0,1,1) });
+Check(Prize()?.ItemId == butter, "Prize bypassed bobber position");
+Set(new SpawnFishData() { ItemId = butter, Chance = 0 });
+Check(Prize() is null, "Prize allowed zero-chance pool");
+Set(new SpawnFishData() { ItemId = butter }); bridge.Rain = true;
+Check(Prize() is null, "Prize bypassed weather"); bridge.Rain = false;
+Game1.timeOfDay = 2600; Check(Prize() is null, "Prize bypassed time"); Game1.timeOfDay = 1200;
+Console.WriteLine("Live prize fishing checks passed: highest eligible price, random IDs, season, weather, time, position and special exclusions.");
 Console.WriteLine("SVE checks passed: optional locations, live fish data, season/weather/level/event/depth gates, probabilities, special exclusions and missing-content delivery.");
 
 FarmFishingChecks.Run(args.FirstOrDefault());

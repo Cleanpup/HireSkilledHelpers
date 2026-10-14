@@ -70,6 +70,13 @@ internal static class WorkerFishingCatchCatalog
                 && (fish.Weather == "any" || (fish.Weather == "rain") == raining)).ToArray();
     }
 
+    public static WorkerFishingCatch? BestCatch(string area, string season, int time, bool raining, Func<string, int> price)
+    {
+        Fish? best = EligibleFish(area, season, time, raining).OrderByDescending(fish => price($"(O){fish.Id}"))
+            .ThenBy(fish => fish.Id).FirstOrDefault();
+        return best is null ? null : new() { ItemId = $"(O){best.Id}", Experience = best.Experience };
+    }
+
     public static WorkerFishingCatch? Roll(string area, string season, int timeOfDay, bool raining, int fishingLevel, Random random)
     {
         Fish[] eligible = EligibleFish(area, season, timeOfDay, raining);

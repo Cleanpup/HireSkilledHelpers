@@ -5,6 +5,7 @@
     <Compile Include="../../Workers/Fishing/WorkerFishingCatchCatalog.cs" />
     <Compile Include="../../Workers/Fishing/WorkerLocationFishing.cs" />
     <Compile Include="../../Workers/Fishing/WorkerFishingShoreSearch.cs" />
+    <Compile Include="../../Workers/Navigation/WorkerIdleRegionPolicy.cs" />
     <Compile Include="../../Workers/Fishing/WorkerFishingShorePolicy.cs" />
     <Compile Include="../../Workers/Model/WorkerFishingProgress.cs" />
     <Compile Include="../../Workers/Jobs/WorkerForageAreaCatalog.cs" />

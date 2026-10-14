@@ -31,6 +31,13 @@ internal static class FarmFishingChecks
         Check(!WorkerFishingShoreSearch.ReachableTiles(12,8,new(-1,1),_=>true).Any(), "Off-map entry accepted");
         Check(WorkerFishingShoreSearch.ReachableTiles(12,8,new(1,1),_=>true).Count()==96, "Map bounds or duplicate traversal");
 
+        HashSet<Point> porchFarm = new() { new(5,3), new(6,3), new(5,4) };
+        for (int y = 6; y < 14; y++)
+        for (int x = 0; x < 15; x++) porchFarm.Add(new(x,y));
+        Point[] exterior = WorkerFishingShoreSearch.FromFarmEntrance(15,14,new(5,2),porchFarm.Contains).ToArray();
+        Check(exterior.Length == 120 && exterior.Contains(new Point(14,13)) && !exterior.Contains(new Point(5,3)),
+            "Farm fishing stayed in the isolated farmhouse porch instead of searching the main Farm");
+
         var farm = new GameLocation{ NameOrUniqueName="Farm", Depth=3 };
         var coast = new GameLocation{ NameOrUniqueName="Beach", Depth=3 };
         Game1.Locations["Farm"]=farm; Game1.Locations["Beach"]=coast;
@@ -42,7 +49,11 @@ internal static class FarmFishingChecks
         farm.Data.Fish=new(){new(){ItemId="LOCATION_FISH Beach BOBBER_X BOBBER_Y WATER_DEPTH",Chance=.5f}};
         var caught=WorkerLocationFishing.Roll(farm,new(1,1),new(4,1),0,1,new FixedRandom());
         Check(caught?.ItemId==id && caught.IsLiveDataCatch && WorkerFishingCatchCatalog.IsPersistable(caught.Clone()), "Inherited custom fish/save marker");
+        Check(WorkerLocationFishing.BestCatch(farm,new(1,1),new(4,1),10,1,new Random(100),_ => 100)?.ItemId==id,
+            "Prize catch must follow inherited farm pools");
         coast.Data.Fish[0].CanBeInherited=false;
+        Check(WorkerLocationFishing.BestCatch(farm,new(1,1),new(4,1),10,1,new Random(100),_ => 100) is null,
+            "Prize catch bypassed CanBeInherited");
         Check(WorkerLocationFishing.Roll(farm,new(1,1),new(4,1),0,1,new FixedRandom()) is null, "CanBeInherited ignored");
         coast.Data.Fish[0].CanBeInherited=true;
         // Both nested and parent generic fish chance apply: .5 * .4 * .4 = .08, not .2.
@@ -51,6 +62,8 @@ internal static class FarmFishingChecks
         Check(Math.Abs(count/50000d-.08)<.005,$"Inherited chance layers incorrect: {count}");
         farm.Data.Fish.Clear();farm.Properties["FarmFishLocationOverride"]="Beach 1";
         Check(WorkerLocationFishing.Roll(farm,new(1,1),new(4,1),0,1,new FixedRandom())?.ItemId==id, "Custom farm map override ignored");
+        Check(WorkerLocationFishing.BestCatch(farm,new(1,1),new(4,1),10,1,new Random(100),_ => 100)?.ItemId==id,
+            "Prize catch ignored map override");
         farm.Properties["FarmFishLocationOverride"]="Beach 0";
         Check(WorkerLocationFishing.Roll(farm,new(1,1),new(4,1),0,1,new FixedRandom()) is null, "Zero override chance ignored");
         farm.Properties.Clear();
@@ -80,6 +93,8 @@ internal static class FarmFishingChecks
             farm.Data=locations[name];int fishCount=0;random=new(123);
             Check(WorkerLocationFishing.HasFishPoolAt(farm,tile-new Point(3,0),tile)==expectFish,
                 $"Productive shore preference is wrong for {name} at {tile}");
+            Check((WorkerLocationFishing.BestCatch(farm,tile-new Point(3,0),tile,10,1,new Random(1),_ => 100) is not null)==expectFish,
+                $"Prize fish/trash separation wrong for {name}");
             for(int n=0;n<3000;n++) if(WorkerLocationFishing.Roll(farm,tile-new Point(3,0),tile,5,n,random)!=null)fishCount++;
             Check(expectFish ? fishCount>0 : fishCount==0,$"Native {name} at {tile}: expected fish={expectFish}, got {fishCount}");
             Console.WriteLine($"Native {name} at {tile}: {fishCount}/3000 rewarded fish casts.");

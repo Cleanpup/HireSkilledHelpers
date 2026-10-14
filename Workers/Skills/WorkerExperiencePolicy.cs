@@ -24,6 +24,15 @@ internal static class WorkerExperiencePolicy
         return level;
     }
 
+    /// <summary>Explicit worker-only testing override; choices are retained and remain gated by XP.</summary>
+    public static bool TrySetTestLevel(WorkerRosterEntry worker, int level, bool isHost, bool worldReady)
+    {
+        if (!isHost || !worldReady || level is not (5 or 7 or 10)) return false;
+        int xp = GetThreshold(level);
+        worker.Experience = new() { Farming = xp, Mining = xp, Fishing = xp, Foraging = xp, Combat = xp };
+        return true;
+    }
+
     public static int GetFarmingLevel(int experience) => GetLevel(experience);
 
     public static int GetThreshold(int level) => FarmingLevelThresholds[Math.Clamp(level, 0, MaximumLevel)];

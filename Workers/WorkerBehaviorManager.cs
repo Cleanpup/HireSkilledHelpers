@@ -32,6 +32,7 @@ internal sealed class WorkerBehaviorManager
     private enum ForagerTargetKind
     {
         Forage,
+        BerryBush,
         Tree,
         HardwoodTree,
         HardwoodClump,
@@ -40,7 +41,7 @@ internal sealed class WorkerBehaviorManager
     }
 
     private sealed record ForagerTarget(string LocationName, Point ResourceTile, Point ApproachTile, ForagerTargetKind Kind,
-        StardewValley.Object? ExpectedObject = null);
+        StardewValley.Object? ExpectedObject = null, Bush? ExpectedBush = null);
 
     private sealed record DropCollectionZone(
         GameLocation Location, Point Tile, HashSet<Debris> ExistingDebris, int CollectAfterTick, int ExpiresAtTick,
@@ -145,6 +146,7 @@ internal sealed class WorkerBehaviorManager
     private readonly Dictionary<string, WorkerRuntimeSnapshot> snapshots = new(System.StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> completedToday = new(System.StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Point> activeTargets = new(System.StringComparer.OrdinalIgnoreCase);
+    private int beachBridgeWarningDay = -1;
     private readonly Dictionary<string, ForagerTarget> activeForagerTargets = new(System.StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ActiveForagerAction> activeForagerActions = new(System.StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ActiveObstacleClear> activeObstacleClears = new(System.StringComparer.OrdinalIgnoreCase);
@@ -271,6 +273,8 @@ internal sealed class WorkerBehaviorManager
                 continue;
             }
 
+            // Native movement adds this replicated float without rounding; derive it afresh to avoid stacking.
+            worker.addedSpeed = this.workerShellManager.HasMovementPerk(workerId) ? worker.speed * 0.75f : 0f;
             this.combatManager.EnsureHealth(worker, workerId);
             // Finished rewards remain deliverable after changing to a different profession.
             if (this.workerShellManager.GetExplorationProgress(workerId).PendingLoot.Count > 0)
@@ -286,6 +290,7 @@ internal sealed class WorkerBehaviorManager
                 this.ClearActiveJobState(workerId);
                 this.snapshots[workerId] = new WorkerRuntimeSnapshot(this.workerShellManager.GetAssignedTask(workerId),
                     "Idle", "Home for the night", 0, null);
+                this.workerShellManager.ObserveRuntimeIdle(workerId, true);
                 continue;
             }
 
@@ -372,6 +377,7 @@ internal sealed class WorkerBehaviorManager
                 this.explorationManager.Suspend(workerId);
             if (assignment != WorkerTaskKind.Idle && this.workerShellManager.CanWorkerWorkToday(workerId))
             {
+                this.workerShellManager.ObserveRuntimeIdle(workerId, false);
                 this.UpdateAssignedWork(worker, workerId, assignment);
                 continue;
             }
@@ -412,6 +418,7 @@ internal sealed class WorkerBehaviorManager
         this.completedToday.Clear();
         this.activeTargets.Clear();
         this.activeForagerTargets.Clear();
+        this.beachBridgeWarningDay = -1;
         this.activeForagerActions.Clear();
         this.activeObstacleClears.Clear();
         this.dropCollectionZones.Clear();
@@ -723,7 +730,7 @@ internal sealed class WorkerBehaviorManager
             this.workerShellManager.TryGetWorker(workerId, out NPC? worker);
             bool casting = worker?.modData.ContainsKey(WorkerFishingManager.VisualKey) == true;
             current = current with { State = casting ? "Fishing" : "Idle", Status = casting
-                ? $"Fishing at {WorkerFishingAreaCatalog.Label(this.workerShellManager.GetFishingArea(workerId))}: {fishing.Minutes}/{WorkerFishingPolicy.MinutesPerCatch} minutes"
+                ? $"Fishing at {WorkerFishingAreaCatalog.Label(this.workerShellManager.GetFishingArea(workerId))}: {fishing.Minutes}/{this.workerShellManager.GetFishingMinutes(workerId)} minutes"
                 : "Away from fishing shore" };
             if (!casting && worker?.modData.ContainsKey(WorkerFishingManager.NoSpotKey) == true)
                 current = current with { State = WorkerFishingShoreSearch.NoSpotState, Status = WorkerFishingShoreSearch.NoFarmSpotMessage };
@@ -832,6 +839,7 @@ internal sealed class WorkerBehaviorManager
                 ? "Idle at home"
                 : "Work complete; resting at home";
             this.snapshots[workerId] = new WorkerRuntimeSnapshot(assignment, "Idle", status, 0, null);
+            this.workerShellManager.ObserveRuntimeIdle(workerId, true);
             this.LogState(workerId, worker, status);
             return;
         }
@@ -1469,6 +1477,11 @@ internal sealed class WorkerBehaviorManager
         {
             if (mining && (worker.currentLocation != location || (WorkerMiningPolicy.IsDungeon(this.workerShellManager.GetMiningArea(workerId))
                 && (Game1.player.currentLocation != location || !WorkerDungeonTravelManager.IsActiveFloor(location))))) return false;
+            if (target.Kind == ForagerTargetKind.BerryBush
+                && (target.ExpectedBush is null || !IsHarvestableBerryBush(target.ExpectedBush)
+                    || !this.GetBerryBushes(search.TargetLocation).Contains(target.ExpectedBush)
+                    || this.activeForagerTargets.Any(pair => pair.Key != workerId && ReferenceEquals(pair.Value.ExpectedBush, target.ExpectedBush))))
+                return false;
             if (IsAssignedObjectJob(assignment)
                 && (this.IsDebrisReservedByAnother(workerId, search.TargetLocation, target.ResourceTile)
                     || !search.TargetLocation.objects.TryGetValue(target.ResourceTile.ToVector2(), out StardewValley.Object? current)
@@ -1910,6 +1923,24 @@ internal sealed class WorkerBehaviorManager
                 && WorkerMiningPolicy.CanCollectLooseGem(mode, item.ItemId, item.IsBreakableStone()));
     }
 
+    private IEnumerable<Bush> GetBerryBushes(GameLocation location)
+        => location.largeTerrainFeatures.OfType<Bush>().Concat(location.terrainFeatures.Values.OfType<Bush>()).Distinct();
+
+    private static bool IsHarvestableBerryBush(Bush bush)
+        => bush.size.Value == 1 && WorkerBerryPolicy.CanHarvest(bush.size.Value, bush.townBush.Value, bush.inPot.Value,
+            bush.readyForHarvest(), bush.inBloom(), bush.GetShakeOffItem());
+
+    private bool IsBeachForageBlocked(GameLocation location, Point tile)
+    {
+        if (location is not Beach beach || !WorkerBerryPolicy.BehindBeachBridge(beach.bridgeFixed.Value, tile.X, tile.Y)) return false;
+        if (this.beachBridgeWarningDay != Game1.Date.TotalDays)
+        {
+            this.beachBridgeWarningDay = Game1.Date.TotalDays;
+            Game1.addHUDMessage(new HUDMessage("Repair the Beach bridge (300 wood) to reach this forage.", 5000f) { whatType = HUDMessage.error_type });
+        }
+        return true;
+    }
+
     private IEnumerable<ForagerTarget> GetForagerTargets(NPC worker, string workerId, GameLocation location,
         WorkerTaskKind assignment, bool includeBlockedApproaches = false)
     {
@@ -1946,8 +1977,19 @@ internal sealed class WorkerBehaviorManager
                     continue;
 
                 Point resourceTile = pair.Key.ToPoint();
+                if (this.IsBeachForageBlocked(location, resourceTile)) continue;
                 foreach (Point approach in this.GetApproachTiles(worker, location, resourceTile, 1, 1, includeBlockedApproaches))
                     yield return new ForagerTarget(location.NameOrUniqueName, resourceTile, approach, ForagerTargetKind.Forage);
+            }
+            foreach (Bush bush in this.GetBerryBushes(location))
+            {
+                if (!IsHarvestableBerryBush(bush) || this.activeForagerTargets.Any(pair => pair.Key != workerId && ReferenceEquals(pair.Value.ExpectedBush, bush))) continue;
+                Point tile = bush.Tile.ToPoint();
+                if (this.IsBeachForageBlocked(location, tile)) continue;
+                Rectangle box = bush.getBoundingBox();
+                foreach (Point approach in this.GetApproachTiles(worker, location, tile,
+                    Math.Max(1, box.Width / Game1.tileSize), Math.Max(1, box.Height / Game1.tileSize), includeBlockedApproaches))
+                    yield return new ForagerTarget(location.NameOrUniqueName, tile, approach, ForagerTargetKind.BerryBush, ExpectedBush: bush);
             }
             yield break;
         }
@@ -2049,15 +2091,40 @@ internal sealed class WorkerBehaviorManager
             return;
         }
 
+        if (target.Kind == ForagerTargetKind.BerryBush)
+        {
+            this.StartWorkMotion(worker, workerId, WorkerWorkAnimationKind.Gather, target.ResourceTile, () =>
+            {
+                Bush? bush = target.ExpectedBush;
+                if (bush is not null && this.GetBerryBushes(location).Contains(bush) && IsHarvestableBerryBush(bush)
+                    && !this.IsBeachForageBlocked(location, target.ResourceTile))
+                {
+                    int level = WorkerExperiencePolicy.GetLevel(this.workerShellManager.GetWorkerExperience(workerId).Foraging);
+                    Item berries = ItemRegistry.Create(bush.GetShakeOffItem(), WorkerBerryPolicy.Yield(level));
+                    ApplyHarvestPerk(berries, this.workerShellManager.GetActivePerk(workerId, WorkerSkill.Foraging), forage: true);
+                    bush.tileSheetOffset.Value = 0;
+                    bush.setUpSourceRect();
+                    WorkerItemStorage.Store(berries, this.workerShellManager.GetHarvestDestination(workerId), this.monitor);
+                    this.RecordCompletedWork(workerId);
+                    this.workerShellManager.TryAwardCompletedActionExperience(workerId, WorkerExperienceAction.PickupForage);
+                    location.playSound("leafrustle");
+                }
+                this.FinishForagerAction(worker, workerId, target, assignment, null);
+            });
+            return;
+        }
+
         if (target.Kind == ForagerTargetKind.Forage)
         {
             StardewValley.Object? expectedForage = location.Objects.GetValueOrDefault(target.ResourceTile.ToVector2());
             this.StartWorkMotion(worker, workerId, WorkerWorkAnimationKind.Gather, target.ResourceTile, () =>
             {
                 if (location.Objects.TryGetValue(target.ResourceTile.ToVector2(), out StardewValley.Object? forage)
-                    && ReferenceEquals(forage, expectedForage) && forage.IsSpawnedObject && forage.isForage())
+                    && ReferenceEquals(forage, expectedForage) && forage.IsSpawnedObject && forage.isForage()
+                    && !this.IsBeachForageBlocked(location, target.ResourceTile))
                 {
                     location.Objects.Remove(target.ResourceTile.ToVector2());
+                    ApplyHarvestPerk(forage, this.workerShellManager.GetActivePerk(workerId, WorkerSkill.Foraging), forage: true);
                     bool chestOnly = WorkerItemStorage.Store(forage, this.workerShellManager.GetHarvestDestination(workerId), this.monitor);
                     this.RecordCompletedWork(workerId);
                     this.workerShellManager.TryAwardCompletedActionExperience(workerId, WorkerExperienceAction.PickupForage);
@@ -2547,7 +2614,8 @@ internal sealed class WorkerBehaviorManager
             Crop crop = dirt.crop;
             int regrowDaysBefore = crop.dayOfCurrentPhase.Value;
             this.monitor.Log($"Worker reached crop tile {tile}; harvesting crop {crop.indexOfHarvest.Value} (regrows={crop.RegrowsAfterHarvest()}).", LogLevel.Trace);
-            WorkerHarvestCollector collector = new(farm, tile, this.workerShellManager.GetHarvestDestination(workerId), this.monitor);
+            WorkerHarvestCollector collector = new(farm, tile, this.workerShellManager.GetHarvestDestination(workerId), this.monitor,
+                this.workerShellManager.GetActivePerk(workerId, WorkerSkill.Farming));
             int shippingBinCountBefore = farm.getShippingBin(Game1.MasterPlayer).Count;
             bool harvested = WithoutFarmerExperience(() => crop.harvest(tile.X, tile.Y, dirt, collector));
             int shippingBinCountAfter = farm.getShippingBin(Game1.MasterPlayer).Count;
@@ -2638,6 +2706,12 @@ internal sealed class WorkerBehaviorManager
         return crop.phaseDays.Count > 0 && crop.currentPhase.Value >= crop.phaseDays.Count - 1;
     }
 
+    private static void ApplyHarvestPerk(Item item, int choice, bool forage)
+    {
+        item.Stack = checked(item.Stack * WorkerPerkPolicy.HarvestMultiplier(choice, forage));
+        if (WorkerPerkPolicy.IridiumHarvest(choice, forage) && item is StardewValley.Object obj) obj.Quality = 4;
+    }
+
     private sealed class WorkerHarvestCollector : JunimoHarvester
     {
         private readonly Farm farm;
@@ -2645,13 +2719,15 @@ internal sealed class WorkerBehaviorManager
         private readonly bool destinationSelected;
         private readonly IMonitor monitor;
         private bool fallbackLogged;
+        private readonly int perk;
 
         public int ItemsCollected { get; private set; }
 
         public int ChestDeposits { get; private set; }
 
-        public WorkerHarvestCollector(Farm farm, Point tile, WorkerHarvestDestination? destination, IMonitor monitor)
+        public WorkerHarvestCollector(Farm farm, Point tile, WorkerHarvestDestination? destination, IMonitor monitor, int perk)
         {
+            this.perk = perk;
             this.farm = farm;
             this.monitor = monitor;
             this.destinationSelected = destination is not null;
@@ -2664,6 +2740,7 @@ internal sealed class WorkerBehaviorManager
         public override void tryToAddItemToHut(Item item)
         {
             this.ItemsCollected++;
+            ApplyHarvestPerk(item, this.perk, forage: false);
             WorkerItemStorage.StoreResult result = WorkerItemStorage.Store(item, this.destinationChest, this.farm, ex =>
                 this.monitor.Log($"Worker could not add harvested items to the selected chest: {ex.Message}", LogLevel.Warn));
             if (result.ChestDeposit)

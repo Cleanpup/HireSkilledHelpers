@@ -75,7 +75,9 @@ internal sealed class WorkerCombatManager
         if (this.states.TryGetValue(workerId, out CombatState? state) && state.MaxHealth > 0)
         {
             maxHealth = this.shell.GetWorkerMaxHealth(workerId);
-            health = WorkerCombatPolicy.NormalizeHealth(state.Health, state.MaxHealth, maxHealth);
+            health = state.MaxHealth != maxHealth && this.shell.TryGetCombatHealthToday(workerId, out int saved, out int savedMax)
+                ? WorkerCombatPolicy.NormalizeHealth(saved, savedMax, maxHealth)
+                : WorkerCombatPolicy.NormalizeHealth(state.Health, state.MaxHealth, maxHealth);
             return true;
         }
         if (this.shell.TryGetWorker(workerId, out NPC? worker) && worker is not null
@@ -160,7 +162,9 @@ internal sealed class WorkerCombatManager
         }
         else if (newMaximum != state.MaxHealth)
         {
-            state.Health = WorkerCombatPolicy.NormalizeHealth(state.Health, state.MaxHealth, newMaximum);
+            state.Health = this.shell.TryGetCombatHealthToday(workerId, out int saved, out int savedMax)
+                ? WorkerCombatPolicy.NormalizeHealth(saved, savedMax, newMaximum)
+                : WorkerCombatPolicy.NormalizeHealth(state.Health, state.MaxHealth, newMaximum);
             state.MaxHealth = newMaximum;
         }
         else
@@ -753,7 +757,10 @@ internal sealed class WorkerCombatManager
             return;
         // Keep the direction captured at windup; damage must not redirect the
         // visual slash halfway through when the monster moves or overlaps us.
-        int dealt = target.takeDamage(10, 0, 0, false, 0d, "hitEnemy");
+        bool lethal = this.shell.GetActivePerk(workerId, WorkerSkill.Combat) == 1;
+        int damage = lethal ? (int)Math.Min(int.MaxValue, (long)target.Health + Math.Max(0, target.resilience.Value) + 10) : 10;
+        int dealt = target.takeDamage(damage, 0, 0, false, 0d, "hitEnemy");
+        if (lethal && dealt > 0 && target.Health > 0) target.Health = 0;
         this.monitor.Log($"{worker.displayName} struck {target.displayName} at {target.TilePoint}: "
             + $"damage={dealt}, remaining health={target.Health}.", LogLevel.Trace);
         if (dealt <= 0 || target.Health > 0)

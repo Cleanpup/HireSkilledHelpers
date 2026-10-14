@@ -10,7 +10,7 @@ using StardewValley.Objects;
 namespace HireSkilledHelpers.Workers;
 
 /// <summary>Host-owned hiring and orders, with a read-only roster for farmhands.</summary>
-internal sealed class WorkerControlMenu : IClickableMenu
+internal sealed partial class WorkerControlMenu : IClickableMenu
 {
     [Flags]
     private enum ResizeEdges { None = 0, Left = 1, Top = 2, Right = 4, Bottom = 8 }
@@ -20,6 +20,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         Roster,
         Jobs,
         Skills,
+        Perks,
         Storage,
     }
 
@@ -42,8 +43,6 @@ internal sealed class WorkerControlMenu : IClickableMenu
     private const int DestinationRowIdBase = 92000;
     private const int ForageAreaId = 90023;
     private const int ExplorationAreaId = 90025;
-    private const int SkillLevelsId = 90026;
-    private const int WorkerPerksId = 90027;
     private const int ProfessionDropdownId = 90028;
     private const int ProfessionRowIdBase = 93000;
     private static readonly WorkerProfession[] ProfessionOptions =
@@ -88,8 +87,6 @@ internal sealed class WorkerControlMenu : IClickableMenu
     private ClickableComponent destinationNextButton = null!;
     private ClickableComponent forageAreaButton = null!;
     private ClickableComponent explorationAreaButton = null!;
-    private ClickableComponent skillLevelsButton = null!;
-    private ClickableComponent workerPerksButton = null!;
     private ClickableComponent professionDropdownButton = null!;
     private Rectangle professionPopupBounds;
     private bool professionDropdownOpen;
@@ -111,7 +108,6 @@ internal sealed class WorkerControlMenu : IClickableMenu
     private int firstVisibleDestination;
     private int visibleDestinationCount = 1;
     private bool destinationDropdownOpen;
-    private bool showWorkerPerks;
     private double refreshMilliseconds;
     private ResizeEdges resizeEdges;
     private Point resizeStartMouse;
@@ -271,7 +267,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
             Game1.playSound("smallSelect");
             return;
         }
-        if (this.professionDropdownButton.containsPoint(x, y))
+        if (this.currentTab != WorkerMenuTab.Perks && this.professionDropdownButton.containsPoint(x, y))
         {
             if (this.EnsureSelectedHostWorker())
             {
@@ -306,7 +302,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         {
             this.currentTab = WorkerMenuTab.Roster;
             this.destinationDropdownOpen = false;
-            this.RefreshClickableComponents(RosterTabId);
+            this.RebuildLayout(RosterTabId);
             Game1.playSound("smallSelect");
             return;
         }
@@ -314,7 +310,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         {
             this.currentTab = WorkerMenuTab.Jobs;
             this.destinationDropdownOpen = false;
-            this.RefreshClickableComponents(JobsTabId);
+            this.RebuildLayout(JobsTabId);
             Game1.playSound("smallSelect");
             return;
         }
@@ -322,7 +318,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         {
             this.currentTab = WorkerMenuTab.Skills;
             this.destinationDropdownOpen = false;
-            this.RefreshClickableComponents(SkillsTabId);
+            this.RebuildLayout(SkillsTabId);
             Game1.playSound("smallSelect");
             return;
         }
@@ -334,16 +330,15 @@ internal sealed class WorkerControlMenu : IClickableMenu
             Game1.playSound("smallSelect");
             return;
         }
-        if (this.currentTab == WorkerMenuTab.Skills)
+        if (this.perksTabButton.containsPoint(x, y))
         {
-            if (this.skillLevelsButton.containsPoint(x, y) || this.workerPerksButton.containsPoint(x, y))
-            {
-                this.showWorkerPerks = this.workerPerksButton.containsPoint(x, y);
-                this.RefreshClickableComponents(this.showWorkerPerks ? WorkerPerksId : SkillLevelsId);
-                Game1.playSound("smallSelect");
-                return;
-            }
+            this.currentTab = WorkerMenuTab.Perks;
+            this.destinationDropdownOpen = false;
+            this.RebuildLayout(PerksTabId);
+            Game1.playSound("smallSelect");
+            return;
         }
+        if (this.currentTab == WorkerMenuTab.Perks && this.HandlePerkClick(x, y)) return;
         foreach (ClickableComponent row in this.workerRows)
         {
             if (row.containsPoint(x, y))
@@ -580,7 +575,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
             return;
         }
         if (this.professionDropdownOpen) return;
-        if (this.professionDropdownButton.containsPoint(x, y) && this.GetSelectedWorker() is not null)
+        if (this.currentTab != WorkerMenuTab.Perks && this.professionDropdownButton.containsPoint(x, y) && this.GetSelectedWorker() is not null)
         {
             this.hoverText = Context.IsMainPlayer
                 ? "Change profession. Skills and perks stay; choose a new order afterward."
@@ -601,7 +596,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
                 return;
             }
         }
-        if (this.GetProfileLayout().Name.Contains(x, y) && this.GetSelectedWorker() is WorkerSummarySnapshot selected)
+        if (this.currentTab != WorkerMenuTab.Perks && this.GetProfileLayout().Name.Contains(x, y) && this.GetSelectedWorker() is WorkerSummarySnapshot selected)
         {
             this.hoverText = selected.DisplayName;
             return;
@@ -614,6 +609,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         }
         if (this.currentTab == WorkerMenuTab.Storage && this.destinationDropdownButton.containsPoint(x, y))
             this.hoverText = "Choose where this worker sends gathered items. Other workers keep their own destinations.";
+        if (this.currentTab == WorkerMenuTab.Perks) this.HoverPerks(x, y);
         if (this.currentTab != WorkerMenuTab.Jobs)
         {
             return;
@@ -637,7 +633,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         Game1.drawDialogueBox(this.xPositionOnScreen, this.yPositionOnScreen, this.width, this.height, speaker: false, drawOnlyBox: true);
         this.DrawHeader(b);
         this.DrawRoster(b);
-        this.DrawDetails(b);
+        if (this.currentTab != WorkerMenuTab.Perks) this.DrawDetails(b);
         this.DrawOrders(b);
         this.DrawFooter(b);
         this.DrawResizeGrips(b);
@@ -724,6 +720,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         int detailHeight = Math.Clamp((int)(bodyHeight * 0.46f), Math.Min(120, bodyHeight / 2), 190);
         this.detailsBounds = new Rectangle(detailLeft, bodyTop, detailWidth, detailHeight);
         this.ordersBounds = new Rectangle(detailLeft, this.detailsBounds.Bottom + Gap, detailWidth, Math.Max(1, bodyHeight - detailHeight - Gap));
+        if (this.currentTab == WorkerMenuTab.Perks) this.ordersBounds = new Rectangle(detailLeft, bodyTop, detailWidth, bodyHeight);
         this.professionDropdownButton = Button(ProfessionDropdownId, this.GetProfileLayout().Profession);
         int popupWidth = Math.Max(160, this.professionDropdownButton.bounds.Width);
         int popupHeight = ProfessionOptions.Length * 36 + 12;
@@ -739,11 +736,12 @@ internal sealed class WorkerControlMenu : IClickableMenu
                     new Rectangle(popupX + 6, popupY + 6 + i * 36, popupWidth - 12, 34)));
         int hireWidth = Math.Min(220, this.headerBounds.Width / 4);
         this.hireButton = Button(HireId, new Rectangle(right - hireWidth, this.headerBounds.Y + 4, hireWidth, 56));
-        int tabWidth = Math.Min(150, Math.Max(80, (this.headerBounds.Width - hireWidth - Gap * 5 - 8) / 4));
+        int tabWidth = Math.Min(150, Math.Max(60, (this.headerBounds.Width - hireWidth - Gap * 6 - 8) / 5));
         this.rosterTabButton = Button(RosterTabId, new Rectangle(this.headerBounds.X + 4, this.headerBounds.Y + 4, tabWidth, 56));
         this.jobsTabButton = Button(JobsTabId, new Rectangle(this.rosterTabButton.bounds.Right + Gap, this.headerBounds.Y + 4, tabWidth, 56));
         this.skillsTabButton = Button(SkillsTabId, new Rectangle(this.jobsTabButton.bounds.Right + Gap, this.headerBounds.Y + 4, tabWidth, 56));
-        this.storageTabButton = Button(StorageTabId, new Rectangle(this.skillsTabButton.bounds.Right + Gap, this.headerBounds.Y + 4, tabWidth, 56));
+        this.perksTabButton = Button(PerksTabId, new Rectangle(this.skillsTabButton.bounds.Right + Gap, this.headerBounds.Y + 4, tabWidth, 56));
+        this.storageTabButton = Button(StorageTabId, new Rectangle(this.perksTabButton.bounds.Right + Gap, this.headerBounds.Y + 4, tabWidth, 56));
         int managementWidth = Math.Min(132, Math.Max(80, this.footerBounds.Width / 5));
         this.dismissButton = Button(DismissId, new Rectangle(right - managementWidth, this.footerBounds.Y + 4, managementWidth, 50));
         this.payButton = Button(PayId, new Rectangle(this.dismissButton.bounds.Left - managementWidth - Gap, this.footerBounds.Y + 4, managementWidth, 50));
@@ -782,11 +780,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
             this.ordersBounds.Y + (this.ordersBounds.Height >= 220 ? 60 : 8), this.ordersBounds.Width - 36, areaHeight));
         this.explorationAreaButton = Button(ExplorationAreaId, new Rectangle(this.forageAreaButton.bounds.X,
             this.forageAreaButton.bounds.Y + areaRowHeight, this.forageAreaButton.bounds.Width, areaHeight));
-        int skillTabHeight = this.ordersBounds.Height < 220 ? 28 : 36;
-        int skillTabTop = this.ordersBounds.Y + (this.ordersBounds.Height < 220 ? 10 : 52);
-        int skillTabWidth = Math.Min(160, Math.Max(1, (this.ordersBounds.Width - 48) / 2));
-        this.skillLevelsButton = Button(SkillLevelsId, new Rectangle(this.ordersBounds.X + 20, skillTabTop, skillTabWidth, skillTabHeight));
-        this.workerPerksButton = Button(WorkerPerksId, new Rectangle(this.skillLevelsButton.bounds.Right + 8, skillTabTop, skillTabWidth, skillTabHeight));
+        this.BuildPerkLayout();
         bool tallStoragePanel = this.ordersBounds.Height >= 220;
         this.destinationDropdownButton = Button(DestinationDropdownId, new Rectangle(
             this.ordersBounds.X + 18, this.ordersBounds.Y + (tallStoragePanel ? 70 : 14),
@@ -835,11 +829,12 @@ internal sealed class WorkerControlMenu : IClickableMenu
         }
         else
         {
-            if (Context.IsMainPlayer && this.GetSelectedWorker() is not null)
+            if (this.currentTab != WorkerMenuTab.Perks && Context.IsMainPlayer && this.GetSelectedWorker() is not null)
                 this.allClickableComponents.Add(this.professionDropdownButton);
             this.allClickableComponents.Add(this.rosterTabButton);
             this.allClickableComponents.Add(this.jobsTabButton);
             this.allClickableComponents.Add(this.skillsTabButton);
+            this.allClickableComponents.Add(this.perksTabButton);
             this.allClickableComponents.Add(this.storageTabButton);
             this.allClickableComponents.AddRange(this.workerRows);
             this.allClickableComponents.Add(this.hireButton);
@@ -851,10 +846,11 @@ internal sealed class WorkerControlMenu : IClickableMenu
                 if (this.GetSelectedWorker() is { Profession: WorkerProfession.CombatWorker or WorkerProfession.Miner })
                     this.allClickableComponents.Add(this.explorationAreaButton);
             }
-            if (this.currentTab == WorkerMenuTab.Skills)
+            if (this.currentTab == WorkerMenuTab.Perks)
             {
-                this.allClickableComponents.Add(this.skillLevelsButton);
-                this.allClickableComponents.Add(this.workerPerksButton);
+                this.allClickableComponents.Add(this.perkPreviousButton);
+                this.allClickableComponents.Add(this.perkNextButton);
+                if (this.perkPage > 0 && Context.IsMainPlayer) this.allClickableComponents.AddRange(this.perkChoiceButtons);
             }
             if (this.currentTab == WorkerMenuTab.Storage)
             {
@@ -925,6 +921,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         this.DrawButton(b, this.rosterTabButton, "Roster", true, Color.White, WorkerMenuArt.Icon.Roster, this.currentTab == WorkerMenuTab.Roster);
         this.DrawButton(b, this.jobsTabButton, "Jobs", true, Color.White, WorkerMenuArt.Icon.Sprout, this.currentTab == WorkerMenuTab.Jobs);
         this.DrawButton(b, this.skillsTabButton, "Skills", true, Color.White, WorkerMenuArt.Icon.Skills, this.currentTab == WorkerMenuTab.Skills);
+        this.DrawButton(b, this.perksTabButton, "Perks", true, Color.White, WorkerMenuArt.Icon.Perk, this.currentTab == WorkerMenuTab.Perks);
         this.DrawButton(b, this.storageTabButton, "Storage", true, Color.White, WorkerMenuArt.Icon.Chest, this.currentTab == WorkerMenuTab.Storage);
         this.DrawCard(b, this.hireButton.bounds, Context.IsMainPlayer && this.IsControlHighlighted(this.hireButton) ? PaperShade : Paper, false);
         int hireTextX = this.hireButton.bounds.X + 12;
@@ -1118,6 +1115,11 @@ internal sealed class WorkerControlMenu : IClickableMenu
     private void DrawOrders(SpriteBatch b)
     {
         this.DrawPanel(b, this.ordersBounds);
+        if (this.currentTab == WorkerMenuTab.Perks)
+        {
+            this.DrawPerksPanel(b);
+            return;
+        }
         if (this.currentTab == WorkerMenuTab.Storage)
         {
             this.DrawStoragePanel(b);
@@ -1213,21 +1215,13 @@ internal sealed class WorkerControlMenu : IClickableMenu
     {
         if (this.ordersBounds.Height >= 220)
             this.DrawSectionHeading(b, this.ordersBounds, "WORKER SKILLS", string.Empty);
-        this.DrawButton(b, this.skillLevelsButton, "Skills", true, Color.White, selected: !this.showWorkerPerks);
-        this.DrawButton(b, this.workerPerksButton, "Perks", true, Color.White, selected: this.showWorkerPerks);
-        int top = this.skillLevelsButton.bounds.Bottom + 10;
+        int top = this.ordersBounds.Y + (this.ordersBounds.Height >= 220 ? 56 : 12);
         Rectangle content = new(this.ordersBounds.X + Padding, top, this.ordersBounds.Width - Padding * 2,
             Math.Max(1, this.ordersBounds.Bottom - top - 12));
         WorkerSummarySnapshot? selected = this.GetSelectedWorker();
         if (selected is null)
         {
-            this.DrawText(b, this.showWorkerPerks ? "Select a worker to view their perks." : "Select a worker to view their skills.",
-                content, MutedInk, centered: true);
-            return;
-        }
-        if (this.showWorkerPerks)
-        {
-            this.DrawWorkerPerks(b, content, this.workerShellManager.GetWorkerExperience(selected.Value.WorkerId));
+            this.DrawText(b, "Select a worker to view their skills.", content, MutedInk, centered: true);
             return;
         }
 
@@ -1251,41 +1245,6 @@ internal sealed class WorkerControlMenu : IClickableMenu
                 rowWidth, rowHeight);
             this.DrawSkillRow(b, row, skills[index].Name, skills[index].Experience);
         }
-    }
-
-    private void DrawWorkerPerks(SpriteBatch b, Rectangle content, WorkerSkillExperience experience)
-    {
-        int gap = content.Height < 160 ? 8 : 12;
-        bool sideBySide = content.Height < 160 && content.Width >= 380;
-        int rowHeight = Math.Max(1, Math.Min(128, sideBySide ? content.Height : (content.Height - gap) / 2));
-        int cardWidth = sideBySide ? (content.Width - gap) / 2 : content.Width;
-        bool compact = rowHeight < 72 || sideBySide;
-        Rectangle stamina = new(content.X, content.Y, cardWidth, rowHeight);
-        Rectangle health = sideBySide ? new Rectangle(stamina.Right + gap, content.Y, cardWidth, rowHeight)
-            : new Rectangle(content.X, stamina.Bottom + gap, cardWidth, rowHeight);
-        this.DrawPerkCard(b, stamina, "Endurance", WorkerMenuArt.Icon.Perk, WorkerPerkPolicy.HasStaminaPerk(experience),
-            compact ? "Any work skill Lv. 5: stamina 270 → 540"
-                : "Farming, Mining, Fishing or Foraging Lv. 5\nMaximum stamina: 270 → 540. Applies once.");
-        this.DrawPerkCard(b, health, "Vitality", WorkerMenuArt.Icon.Combat, WorkerPerkPolicy.HasHealthPerk(experience),
-            "Combat Lv. 5: maximum health 100 → 200");
-    }
-
-    private void DrawPerkCard(SpriteBatch b, Rectangle row, string name, WorkerMenuArt.Icon icon, bool unlocked, string description)
-    {
-        this.DrawCard(b, row, unlocked ? PaperShade : Paper, unlocked);
-        int inset = row.Height < 72 ? 9 : 14;
-        int iconSize = row.Height >= 90 && row.Width >= 360 ? 40 : 0;
-        int textX = row.X + inset + (iconSize > 0 ? iconSize + 12 : 0);
-        if (iconSize > 0)
-            WorkerMenuArt.Draw(b, icon, new Rectangle(row.X + inset, row.Y + inset, iconSize, iconSize), unlocked ? 1f : 0.5f);
-        int titleHeight = Math.Min(28, Math.Max(1, (row.Height - inset * 2) / 2));
-        int statusWidth = Math.Min(116, (row.Right - inset - textX) / 3);
-        this.DrawSingleLineText(b, name,
-            new Rectangle(textX, row.Y + inset, Math.Max(1, row.Right - inset - statusWidth - textX - 8), titleHeight), Ink);
-        this.DrawSingleLineText(b, unlocked ? "Unlocked" : "Locked",
-            new Rectangle(row.Right - inset - statusWidth, row.Y + inset, statusWidth, titleHeight), unlocked ? Leaf : MutedInk, centered: true, maximumScale: 0.85f);
-        this.DrawText(b, description, new Rectangle(textX, row.Y + inset + titleHeight + 4,
-            row.Right - inset - textX, Math.Max(1, row.Height - inset * 2 - titleHeight - 4)), MutedInk);
     }
 
     private void DrawSkillRow(SpriteBatch b, Rectangle row, string name, int experience)
@@ -1832,8 +1791,8 @@ internal sealed class WorkerControlMenu : IClickableMenu
         WorkerTaskKind.MineOreGems => "Mine ore, gem, coal, geode and cinder-shard nodes, and gather loose quartz, fire quartz, frozen tears and earth crystals. Once these resources are exhausted in Mines or Skull Cavern, break stones to find a ladder or shaft, then wait for the host to descend. Quarry has no deeper floor. Volcano uses fixed exits and player-operated gates and lava crossings; it has no hidden ladders.",
         WorkerTaskKind.FindLadder => "Break stones until a real ladder or shaft is available in Mines or Skull Cavern, then follow when the host descends. Infested floors require the player to defeat monsters; terminal floors, Quarry and Volcano have no hidden ladder to uncover. Workers never create stairs, open gates or advance alone.",
         WorkerTaskKind.SlayMonsters => "Fight real monsters in the combat area. Mines and Skull Cavern follow the host farmer onto active floors.",
-        WorkerTaskKind.Fish => "Teleport to a clear shore in the selected area and repeatedly cast until midnight. Catches are simulated every 30 active in-game minutes using location, season, time and weather. Legendary fish are excluded. Fish go to this worker's chest or shipping fallback and grant worker Fishing XP.",
-        WorkerTaskKind.MiningExpedition => "Station at the selected expedition entrance and produce mining resources every active in-game hour, from 6:00 to 22:00. Rewards scale with the host's deepest mine floor and today's shared luck. Each batch grants 5 Mining XP and goes to this worker's chest or shipping bin. No monster loot or generated floors.",
+        WorkerTaskKind.Fish => "Teleport to a clear shore in the selected area and repeatedly cast until midnight. Catches follow location, season, time and weather. Default: 30 minutes; Rapid fishing: 15; Prize catch: 60. Legendary fish are excluded. Fish go to this worker's chest or shipping fallback and grant worker Fishing XP.",
+        WorkerTaskKind.MiningExpedition => "Station at the selected expedition entrance and produce mining resources every active in-game hour, from 6:00 to 22:00. Rewards scale with the host's deepest mine floor and today's shared luck. Each batch grants 5 Mining XP and goes to this worker's chest or shipping bin.",
         WorkerTaskKind.ExploreArea => "Teleport to the selected dungeon entrance and explore independently for loot every in-game hour, from 6:00 to 22:00. Exploration is simulated; the worker stays at the entrance. Loot goes to this worker's selected chest or shipping-bin fallback. Completed runs grant this worker 5 Combat XP; only monster drops are collected, with stone excluded.",
         _ => "Stop the current order and return to the worker's home tile. Daily wages still apply while hired.",
     };

@@ -141,7 +141,8 @@ internal sealed class WorkerFishingManager
         // State is mirrored through NPC modData. Draw hooks never advance time or roll catches.
         if (ticks % 12 == 1 || !worker.modData.ContainsKey(VisualKey))
             worker.modData[VisualKey] = $"{station.Water.X},{station.Water.Y},{ticks % 360}";
-        while (progress.Minutes >= WorkerFishingPolicy.MinutesPerCatch && progress.CompletedAttempts < WorkerFishingPolicy.MaximumAttemptsPerDay)
+        int minutesPerCatch = this.shell.GetFishingMinutes(workerId);
+        while (progress.Minutes >= minutesPerCatch && progress.CompletedAttempts < WorkerFishingPolicy.MaximumAttemptsPerDay)
         {
             if (!this.Deliver(workerId)) break;
             if (!this.shell.TryBeginFishingCast(workerId)) break;
@@ -149,7 +150,13 @@ internal sealed class WorkerFishingManager
             int seed = unchecked((int)Game1.uniqueIDForThisGame + progress.Day * 397 + progress.CompletedAttempts * 7919);
             foreach (char c in workerId + area) seed = unchecked(seed * 31 + c);
             int level = WorkerExperiencePolicy.GetLevel(this.shell.GetWorkerExperience(workerId).Fishing);
-            WorkerFishingCatch? caught = (WorkerSveIntegration.Enabled || area == WorkerFishingAreaCatalog.Farm)
+            bool prize = this.shell.GetActivePerk(workerId, WorkerSkill.Fishing) == 2;
+            static int Price(string id) => ItemRegistry.Create<StardewValley.Object>(id).Price;
+            WorkerFishingCatch? caught = prize
+                ? (WorkerSveIntegration.Enabled || area == WorkerFishingAreaCatalog.Farm)
+                    ? WorkerLocationFishing.BestCatch(location, station.Shore, station.Water, level, progress.CompletedAttempts, new Random(seed), Price)
+                    : WorkerFishingCatchCatalog.BestCatch(area, location.GetSeason().ToString(), Game1.timeOfDay, location.IsRainingHere(), Price)
+                : (WorkerSveIntegration.Enabled || area == WorkerFishingAreaCatalog.Farm)
                 ? WorkerLocationFishing.Roll(location, station.Shore, station.Water, level, progress.CompletedAttempts, new Random(seed))
                 : WorkerFishingCatchCatalog.Roll(area, location.GetSeason().ToString(), Game1.timeOfDay,
                     location.IsRainingHere(), level, new Random(seed));
@@ -157,7 +164,7 @@ internal sealed class WorkerFishingManager
             if (!this.Deliver(workerId)) break;
             progress = this.shell.GetFishingProgress(workerId);
         }
-        snapshot = new(WorkerTaskKind.Fish, "Fishing", $"Fishing at {WorkerFishingAreaCatalog.Label(area)}: {Math.Min(progress.Minutes, WorkerFishingPolicy.MinutesPerCatch)}/{WorkerFishingPolicy.MinutesPerCatch} minutes", progress.CompletedCatches, station.Shore);
+        snapshot = new(WorkerTaskKind.Fish, "Fishing", $"Fishing at {WorkerFishingAreaCatalog.Label(area)}: {Math.Min(progress.Minutes, minutesPerCatch)}/{minutesPerCatch} minutes", progress.CompletedCatches, station.Shore);
         return false;
     }
 
@@ -193,7 +200,6 @@ internal sealed class WorkerFishingManager
         Point[] offsets = { new(0, 1), new(1, 0), new(0, -1), new(-1, 0) };
         IEnumerable<Point> candidates = area == WorkerFishingAreaCatalog.Farm
             ? this.GetFarmShoreCandidates(location, worker) : GetShoreCandidates(location, anchor);
-        (Point Shore, Point Water)? fallback = null;
         foreach (Point candidate in candidates)
         {
             foreach (Point offset in offsets)
@@ -207,13 +213,11 @@ internal sealed class WorkerFishingManager
                 if (!this.IsSafeShore(location, worker, area, candidate, cast)) continue;
                 if (area == WorkerFishingAreaCatalog.Farm && !WorkerLocationFishing.HasFishPoolAt(location, candidate, cast))
                 {
-                    fallback ??= (candidate, cast);
                     continue;
                 }
                 shore = candidate; water = cast; return true;
             }
         }
-        if (fallback.HasValue) { shore = fallback.Value.Shore; water = fallback.Value.Water; return true; }
         shore = water = Point.Zero; return false;
     }
 
@@ -224,6 +228,12 @@ internal sealed class WorkerFishingManager
         Point entry = worker.currentLocation == location ? worker.TilePoint : Game1.getFarm().GetMainFarmHouseEntry();
         bool Traversable(Point tile) => !location.isWaterTile(tile.X, tile.Y)
             && this.navigation.IsTraversableWorkTile(location, worker, tile);
+        if (worker.currentLocation != location)
+        {
+            foreach (Point tile in WorkerFishingShoreSearch.FromFarmEntrance(back.LayerWidth, back.LayerHeight, entry, Traversable))
+                yield return tile;
+            yield break;
+        }
         // The farmhouse doorway itself may be a warp/barrier. Start immediately outside it.
         if (!Traversable(entry))
         {

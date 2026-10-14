@@ -3,7 +3,8 @@ namespace HireSkilledHelpers.Workers;
 internal static class WorkerFishingPolicy
 {
     public const int MinutesPerCatch = 30;
-    public const int MaximumAttemptsPerDay = 36;
+    // The fastest perk permits 72 attempts over 18 hours; elapsed time still gates every payout.
+    public const int MaximumAttemptsPerDay = 72;
     public static bool IsWithinWorkHours(int time) => time >= 600 && time < 2400;
     public static int WorkMinute(int time) => Math.Clamp(time / 100 * 60 + time % 100, 360, 1440);
 
@@ -41,11 +42,11 @@ internal static class WorkerFishingPolicy
     {
         if (!isHost || !worldReady || !paid || entry.Profession != WorkerProfession.Fisher || entry.AssignedTask != WorkerTaskKind.Fish
             || !progress.CastStarted || !entry.Fishing.CastStarted
-            || progress.Day != day || progress.Minutes < MinutesPerCatch || progress.CompletedAttempts >= MaximumAttemptsPerDay
+            || progress.Day != day || progress.Minutes < WorkerPerkPolicy.FishingMinutes(entry) || progress.CompletedAttempts >= MaximumAttemptsPerDay
             || entry.Fishing.Day != day || entry.Fishing.Minutes != progress.Minutes
             || entry.Fishing.CompletedAttempts != progress.CompletedAttempts || entry.Fishing.CompletedCatches != progress.CompletedCatches
             || (catchItem is not null && !WorkerFishingCatchCatalog.IsAllowed(catchItem.ItemId))) return false;
-        progress.Minutes -= MinutesPerCatch;
+        progress.Minutes -= WorkerPerkPolicy.FishingMinutes(entry);
         progress.CastStarted = false;
         progress.CompletedAttempts++;
         if (catchItem is not null)

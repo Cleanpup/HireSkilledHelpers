@@ -126,3 +126,7 @@ Base prefix: /home/Cleanpup/Games/HireSkilledHelpers/StardewValleyDecompiled/Sta
 BALANCE DISCLAIMER
 The resource provenance/progression is source-backed; hourly amounts, bonus odds, gem weights, Skull iridium bands and rare shard rolls are deliberately proposed worker balance, NOT claimed to be vanilla per-rock chances. Native methods would spawn world debris, award player XP or affect progression; the catalog is pure and never calls them.
 Excluded: stone/filler, monster loot, artifacts, equipment, bars, radioactive ore, quest/festival items, walnuts and other progression collectibles.
+
+Level-ten worker perks (1.1.0; choose one):
+Double production multiplies every completed independent-mining reward stack by two; hourly timing, 5 Mining XP, entrance access and depth/luck gates stay the same.
+Geode Specialist (updated 1.1.0) replaces the entire normal hourly reward with twice its total item units, all in geodes. Each unit uniformly picks regular, frozen, magma or omni regardless of depth or expedition area. This yields about 10.04/10.70/11.36 geodes per hour at bad/neutral/good luck, plus the tiny rare-shard unit allowance converted to geodes; each type averages one quarter. No ore, coal, gems, cinder shards or prismatic shards are produced with this choice. Physical mining remains unaffected. Previously earned mineral rewards remain deliverable after switching.

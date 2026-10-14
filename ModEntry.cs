@@ -218,6 +218,7 @@ internal sealed class ModEntry : Mod
             this.Monitor.Log(
                 $"Press your business menu key (B by default) or use 'workers' to manage your crew. Hire: {WorkerEmploymentTerms.HiringCost}g including today's wage; later {WorkerEmploymentTerms.DailyWage}g/day.\n"
                 + "workerpermit — queue Lewis's standalone permission cutscene early; host on the Farm\n"
+                + "workers level5 / workers level7 / workers level10 — set all hired workers’ five skills to the exact level for testing\n"
                 + "workers status — list IDs, orders, activity and location\n"
                 + "workers hire [default] — hire with custom or default appearance\n"
                 + "workers assign <id> <water|harvest|tend|forage|trees|hardwood|debris|ores|ladder|mine|slay|explore|independentmine|fish|idle> — assign a job\n"
@@ -234,6 +235,13 @@ internal sealed class ModEntry : Mod
             return;
         switch (action)
         {
+            case "level5" when args.Length == 1:
+            case "level7" when args.Length == 1:
+            case "level10" when args.Length == 1:
+                int testLevel = int.Parse(action[5..]);
+                bool levelsChanged = this.workerShellManager.TrySetAllWorkerTestLevels(testLevel, out string levelMessage);
+                this.Monitor.Log(levelMessage, levelsChanged ? LogLevel.Info : LogLevel.Warn);
+                break;
             case "menu":
                 this.workerControlMenuController.OpenMenu();
                 break;

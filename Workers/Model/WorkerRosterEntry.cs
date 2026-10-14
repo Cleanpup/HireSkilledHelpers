@@ -36,6 +36,8 @@ internal sealed class WorkerRosterEntry
 
     public WorkerSkillExperience Experience { get; set; } = new();
 
+    public WorkerPerkChoices Perks { get; set; } = new();
+
     public WorkerStaminaState Stamina { get; set; } = new();
 
     /// <summary>Chest used for this worker's gathered items; null sends them to the shipping bin.</summary>
@@ -56,6 +58,8 @@ internal sealed class WorkerRosterEntry
     public int CombatHealth { get; set; } = -1;
 
     public int CombatMaxHealth { get; set; }
+
+    public double CombatHealthRemainder { get; set; }
 
     public int LastCombatHealthDay { get; set; } = -1;
 
@@ -82,6 +86,7 @@ internal sealed class WorkerRosterEntry
             NextDayTask = this.NextDayTask,
             CompletedTaskDay = this.CompletedTaskDay,
             Experience = this.Experience?.Clone() ?? new WorkerSkillExperience(),
+            Perks = this.Perks?.Clone() ?? new(),
             Stamina = this.Stamina?.Clone() ?? new(),
             HarvestDestination = this.HarvestDestination?.Clone(),
             DailyWage = this.DailyWage,
@@ -90,6 +95,7 @@ internal sealed class WorkerRosterEntry
             LastDefeatedDay = this.LastDefeatedDay,
             CombatHealth = this.CombatHealth,
             CombatMaxHealth = this.CombatMaxHealth,
+            CombatHealthRemainder = double.IsFinite(this.CombatHealthRemainder) ? Math.Clamp(this.CombatHealthRemainder, 0, 0.999999999) : 0,
             LastCombatHealthDay = this.LastCombatHealthDay,
             PendingObstacleReport = this.PendingObstacleReport?.Clone(),
         };
