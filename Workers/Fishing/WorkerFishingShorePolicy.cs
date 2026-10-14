@@ -11,9 +11,10 @@ internal static class WorkerFishingShorePolicy
         => area != "Beach" || (y == 36 && x is >= 34 and <= 43);
 
     public static bool TryFindCast(int shoreX, int shoreY, int dx, int dy,
-        Func<int, int, bool> isWater, Func<int, int, bool> eligibleFishableWater, out (int X, int Y) cast)
+        Func<int, int, bool> isWater, Func<int, int, bool> eligibleFishableWater, out (int X, int Y) cast, bool preferLongest = false)
     {
         cast = default;
+        bool found = false;
         if (Math.Abs(dx) + Math.Abs(dy) != 1) return false;
         for (int distance = 1; distance <= MaximumCastTiles; distance++)
         {
@@ -21,9 +22,10 @@ internal static class WorkerFishingShorePolicy
             if (!isWater(x, y)) break;
             if (!eligibleFishableWater(x, y)) continue;
             cast = (x, y);
-            return true;
+            found = true;
+            if (!preferLongest) return true;
         }
-        return false;
+        return found;
     }
 
     public static bool IsContinuousWaterCast(int shoreX, int shoreY, int waterX, int waterY,

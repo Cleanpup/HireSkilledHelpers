@@ -5,6 +5,8 @@ internal static class WorkerExplorationPolicy
 {
     public const int MinutesPerRun = 60;
     public const int CombatExperiencePerRun = 5;
+    public const int MiningExperiencePerRun = 5;
+    public static bool IsExpedition(WorkerTaskKind task) => task is WorkerTaskKind.ExploreArea or WorkerTaskKind.MiningExpedition;
     public const int MaximumRunsPerDay = 16;
     public static int WorkMinute(int time) => Math.Clamp(time / 100 * 60 + time % 100, 360, 1320);
     public static int ElapsedMinutes(int previous, int current)
@@ -31,11 +33,14 @@ internal static class WorkerExplorationPolicy
     public static bool TryQueueRun(WorkerRosterEntry worker, WorkerExplorationProgress progress,
         List<WorkerExplorationLoot> loot, int day, bool isHost, bool worldReady, bool paid, bool defeated)
     {
-        if (!isHost || !worldReady || !paid || defeated || worker.AssignedTask != WorkerTaskKind.ExploreArea
+        if (!isHost || !worldReady || !paid || defeated || !IsExpedition(worker.AssignedTask)
             || progress.Day != day || progress.Minutes < MinutesPerRun || progress.CompletedRuns >= MaximumRunsPerDay
             || worker.Exploration.Day != day || worker.Exploration.CompletedRuns != progress.CompletedRuns
             || worker.Exploration.Minutes != progress.Minutes
-            || loot.Count == 0 || loot.Any(item => item.Stack <= 0 || !IsAllowedMonsterLoot(worker.ExplorationArea, item.ItemId))
+            || loot.Count == 0 || loot.Any(item => item.Stack <= 0
+                || item.IsMining != (worker.AssignedTask == WorkerTaskKind.MiningExpedition)
+                || !(item.IsMining ? WorkerMiningLootCatalog.IsAllowed(worker.ExplorationArea, item.ItemId)
+                    : IsAllowedMonsterLoot(worker.ExplorationArea, item.ItemId)))
             || !WorkerExperiencePolicy.TryAwardExploration(worker, isHost, worldReady))
             return false;
         progress.Minutes -= MinutesPerRun;
@@ -67,7 +72,7 @@ internal static class WorkerExplorationPolicy
 
     public static bool IsAllowedPendingLoot(WorkerExplorationLoot item)
         => item.Stack > 0 && WorkerExplorationAreaCatalog.IsValid(item.Area)
-            && IsAllowedMonsterLoot(item.Area, item.ItemId);
+            && (item.IsMining ? WorkerMiningLootCatalog.IsAllowed(item.Area, item.ItemId) : IsAllowedMonsterLoot(item.Area, item.ItemId));
 
     public static void TagLegacyPendingLoot(WorkerExplorationProgress progress, string savedArea)
     {

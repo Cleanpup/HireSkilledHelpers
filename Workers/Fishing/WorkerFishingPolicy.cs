@@ -15,7 +15,7 @@ internal static class WorkerFishingPolicy
         progress.CompletedCatches = Math.Clamp(progress.CompletedCatches, 0, progress.CompletedAttempts);
         progress.LastObservedMinute = progress.LastObservedMinute is >= 360 and <= 1440 ? progress.LastObservedMinute : -1;
         progress.PendingCatches ??= new();
-        progress.PendingCatches.RemoveAll(item => item is null || !WorkerFishingCatchCatalog.IsAllowed(item.ItemId));
+        progress.PendingCatches.RemoveAll(item => item is null || !WorkerFishingCatchCatalog.IsPersistable(item));
     }
 
     public static bool ObserveClock(WorkerFishingProgress progress, int day, int time, bool accrue)

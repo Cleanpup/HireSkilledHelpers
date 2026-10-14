@@ -256,6 +256,8 @@ internal sealed class WorkerBehaviorManager
                     this.workerShellManager.ObserveWorkerStamina(pausedId, recovering: false);
                     if (this.workerShellManager.GetAssignedTask(pausedId) == WorkerTaskKind.Fish)
                         this.fishingManager.Suspend(pausedId);
+                    if (WorkerExplorationPolicy.IsExpedition(this.workerShellManager.GetAssignedTask(pausedId)))
+                        this.explorationManager.Suspend(pausedId);
                 }
             return;
         }
@@ -366,7 +368,7 @@ internal sealed class WorkerBehaviorManager
             WorkerTaskKind assignment = this.workerShellManager.GetAssignedTask(workerId);
             if (assignment == WorkerTaskKind.Fish && !this.workerShellManager.CanWorkerWorkToday(workerId))
                 this.fishingManager.Suspend(workerId);
-            if (assignment == WorkerTaskKind.ExploreArea && !this.workerShellManager.CanWorkerWorkToday(workerId))
+            if (WorkerExplorationPolicy.IsExpedition(assignment) && !this.workerShellManager.CanWorkerWorkToday(workerId))
                 this.explorationManager.Suspend(workerId);
             if (assignment != WorkerTaskKind.Idle && this.workerShellManager.CanWorkerWorkToday(workerId))
             {
@@ -475,7 +477,7 @@ internal sealed class WorkerBehaviorManager
         if (task == WorkerTaskKind.Fish && Context.IsMainPlayer
             && WorkerFishingAreaCatalog.AccessReason(this.workerShellManager.GetFishingArea(workerId)) is string fishingReason)
         { message = fishingReason + "."; return false; }
-        if (task == WorkerTaskKind.ExploreArea && Context.IsMainPlayer
+        if (WorkerExplorationPolicy.IsExpedition(task) && Context.IsMainPlayer
             && WorkerExplorationManager.AccessReason(this.workerShellManager.GetExplorationArea(workerId)) is string reason)
         {
             message = reason + ".";
@@ -706,13 +708,14 @@ internal sealed class WorkerBehaviorManager
                 current = current with { State = "Idle", Status = "At home" };
         }
         WorkerExplorationProgress progress = this.workerShellManager.GetExplorationProgress(workerId);
-        if (!Context.IsMainPlayer && current.AssignedTask == WorkerTaskKind.ExploreArea)
+        if (!Context.IsMainPlayer && WorkerExplorationPolicy.IsExpedition(current.AssignedTask))
         {
             string area = this.workerShellManager.GetExplorationArea(workerId);
             this.workerShellManager.TryGetWorker(workerId, out NPC? worker);
             bool atEntrance = worker?.currentLocation?.NameOrUniqueName == WorkerExplorationAreaCatalog.Entrance(area);
-            current = current with { State = atEntrance ? "Exploring" : "Idle", Status = atEntrance
-                ? $"Exploring {WorkerExplorationAreaCatalog.GetLabel(area)}: {progress.Minutes}/60 minutes" : "Away from exploration entrance" };
+            string activity = current.AssignedTask == WorkerTaskKind.MiningExpedition ? "Mining" : "Exploring";
+            current = current with { State = atEntrance ? activity : "Idle", Status = atEntrance
+                ? $"{activity} {WorkerExplorationAreaCatalog.GetLabel(area)}: {progress.Minutes}/60 minutes" : "Away from exploration entrance" };
         }
         WorkerFishingProgress fishing = this.workerShellManager.GetFishingProgress(workerId);
         if (!Context.IsMainPlayer && current.AssignedTask == WorkerTaskKind.Fish)
@@ -722,6 +725,8 @@ internal sealed class WorkerBehaviorManager
             current = current with { State = casting ? "Fishing" : "Idle", Status = casting
                 ? $"Fishing at {WorkerFishingAreaCatalog.Label(this.workerShellManager.GetFishingArea(workerId))}: {fishing.Minutes}/{WorkerFishingPolicy.MinutesPerCatch} minutes"
                 : "Away from fishing shore" };
+            if (!casting && worker?.modData.ContainsKey(WorkerFishingManager.NoSpotKey) == true)
+                current = current with { State = WorkerFishingShoreSearch.NoSpotState, Status = WorkerFishingShoreSearch.NoFarmSpotMessage };
         }
         bool withinStaminaWorkHours = current.AssignedTask == WorkerTaskKind.Fish
             ? WorkerFishingPolicy.IsWithinWorkHours(Game1.timeOfDay) : WorkerTaskPolicy.IsWithinWorkHours(Game1.timeOfDay);
@@ -1088,7 +1093,7 @@ internal sealed class WorkerBehaviorManager
             else this.snapshots[workerId] = fishingSnapshot;
             return;
         }
-        if (assignment == WorkerTaskKind.ExploreArea)
+        if (WorkerExplorationPolicy.IsExpedition(assignment))
         {
             if (this.explorationManager.Update(worker, workerId, out WorkerRuntimeSnapshot explorationSnapshot))
                 this.BeginReturnHome(worker, workerId, ReturnHomeReason.WorkComplete);
@@ -1365,6 +1370,11 @@ internal sealed class WorkerBehaviorManager
                 && this.workerShellManager.GetWorkerProfession(workerId) != WorkerProfession.Forager
                 ? "Farm" : this.workerShellManager.GetForageLocationName(workerId);
         GameLocation? location = mining ? this.miningLocations.GetValueOrDefault(workerId) : Game1.getLocationFromName(locationName);
+        if (!mining && WorkerSveIntegration.IsKnownArea(locationName) && !WorkerSveIntegration.IsAvailable(locationName))
+        {
+            this.snapshots[workerId] = new(assignment, "Unavailable", "This area requires SVE and its map to be available", 0, null);
+            return;
+        }
         if (location is null || (!mining && !WorkerForageAreaCatalog.IsValidLocation(locationName)))
         {
             this.FinishResourceSweep(worker, workerId, assignment);

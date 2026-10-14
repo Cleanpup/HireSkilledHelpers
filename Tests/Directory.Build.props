@@ -1,5 +1,5 @@
 <Project>
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'ObstacleRouteChecks'">
-    <BaseIntermediateOutputPath>obj/ObstacleRouteChecks/</BaseIntermediateOutputPath>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'ObstacleRouteChecks' Or '$(MSBuildProjectName)' == 'FishingChecks' Or '$(MSBuildProjectName)' == 'WorkerExperienceTests'">
+    <BaseIntermediateOutputPath>obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
   </PropertyGroup>
 </Project>

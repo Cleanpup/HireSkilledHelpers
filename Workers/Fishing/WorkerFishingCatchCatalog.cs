@@ -38,8 +38,25 @@ internal static class WorkerFishingCatchCatalog
         ["IslandSouth"] = new[] { (155,15),(130,15),(128,15),(267,15),(837,15) },
     };
     private static readonly HashSet<string> AllowedIds = FishData.Select(fish => $"(O){fish.Id}").ToHashSet(StringComparer.Ordinal);
-    public static bool IsAllowed(string id) => AllowedIds.Contains(id);
-    public static int Experience(string id) => FishData.FirstOrDefault(fish => $"(O){fish.Id}" == id)?.Experience ?? 0;
+    private static readonly Dictionary<string, int> LiveFishExperience = new(StringComparer.Ordinal);
+    public static bool IsSpecialFish(string? id) => id is "(O)159" or "(O)160" or "(O)163" or "(O)682" or "(O)775"
+        or "(O)898" or "(O)899" or "(O)900" or "(O)901" or "(O)902"
+        or "(O)FlashShifter.StardewValleyExpandedCP_Wolf_Snapper" or "(O)FlashShifter.StardewValleyExpandedCP_Turretfish";
+    public static void RegisterLiveFish(string id, int experience)
+    {
+        if (!IsSpecialFish(id) && id.StartsWith("(O)", StringComparison.Ordinal) && experience > 0)
+            LiveFishExperience[id] = experience;
+    }
+    public static bool IsAllowed(string? id) => id is not null && (AllowedIds.Contains(id) || LiveFishExperience.ContainsKey(id));
+    // Removing SVE must not destroy already-earned fish while their item definitions are unavailable.
+    public static bool IsPersistable(string? id) => IsAllowed(id) || id is not null && !IsSpecialFish(id)
+        && id.StartsWith("(O)FlashShifter.StardewValleyExpandedCP_", StringComparison.Ordinal)
+        && id.Length > "(O)FlashShifter.StardewValleyExpandedCP_".Length;
+    public static bool IsPersistable(WorkerFishingCatch item) => IsPersistable(item.ItemId)
+        || item.IsLiveDataCatch && item.ItemId is { Length: > 3 } && item.ItemId.StartsWith("(O)", StringComparison.Ordinal)
+            && !item.ItemId.Any(char.IsWhiteSpace) && !IsSpecialFish(item.ItemId);
+    public static int Experience(string id) => LiveFishExperience.TryGetValue(id, out int xp) ? xp
+        : FishData.FirstOrDefault(fish => $"(O){fish.Id}" == id)?.Experience ?? 0;
 
     public static IReadOnlyList<string> Eligible(string area, string season, int time, bool raining)
         => EligibleFish(area, season, time, raining).Select(fish => $"(O){fish.Id}").ToArray();

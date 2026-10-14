@@ -29,7 +29,7 @@ internal static class WorkerForageAreaCatalog
         if (!Context.IsWorldReady)
             return result;
 
-        foreach (WorkerForageArea area in SupportedAreas)
+        foreach (WorkerForageArea area in SupportedAreas.Concat(WorkerSveIntegration.AvailableAreas))
         {
             GameLocation? location = Game1.getLocationFromName(area.LocationName);
             if (location is { IsOutdoors: true })
@@ -55,7 +55,7 @@ internal static class WorkerForageAreaCatalog
 
     public static string GetDisplayName(string? locationName)
     {
-        foreach (WorkerForageArea area in SupportedAreas)
+        foreach (WorkerForageArea area in SupportedAreas.Concat(WorkerSveIntegration.Areas))
         {
             if (string.Equals(area.LocationName, locationName, StringComparison.OrdinalIgnoreCase))
                 return area.DisplayName;

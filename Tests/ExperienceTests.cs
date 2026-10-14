@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HireSkilledHelpers.Workers;
 
+MiningExpeditionChecks.Run();
 StaminaChecks.Run();
 PerkChecks.Run();
 ProfessionChecks.Run();
@@ -569,7 +570,7 @@ Equal(10, (int)WorkerTaskKind.MineRocks, "new mining assignment is appended");
 Check(WorkerTaskPolicy.IsTaskAllowed(WorkerProfession.Miner, WorkerTaskKind.MineRocks), "Miner can mine");
 Check(WorkerTaskPolicy.IsTaskAllowed(WorkerProfession.Miner, WorkerTaskKind.Idle), "Miner can recall");
 foreach (WorkerTaskKind task in Enum.GetValues<WorkerTaskKind>())
-    if (!WorkerMiningPolicy.IsMiningTask(task) && task != WorkerTaskKind.Idle)
+    if (!WorkerMiningPolicy.IsMiningTask(task) && task is not (WorkerTaskKind.Idle or WorkerTaskKind.MiningExpedition))
         Check(!WorkerTaskPolicy.IsTaskAllowed(WorkerProfession.Miner, task), "Miner cannot receive another profession's job");
 foreach (WorkerProfession profession in new[] { WorkerProfession.Farmer, WorkerProfession.Forager, WorkerProfession.CombatWorker })
     Check(!WorkerTaskPolicy.IsTaskAllowed(profession, WorkerTaskKind.MineRocks), "mining cannot change existing profession contracts");
@@ -598,7 +599,7 @@ Equal(11, (int)WorkerTaskKind.MineOreGems, "ores task appends save enum values")
 Equal(12, (int)WorkerTaskKind.FindLadder, "ladder task appends save enum values");
 Check(WorkerMiningPolicy.Areas.SequenceEqual(new[] { "Quarry", "Mines", "SkullCavern", "Volcano" }), "mining area order matches the user's progression");
 Check(WorkerTaskPolicy.GetTasks(WorkerProfession.Miner).SequenceEqual(new[] {
-    WorkerTaskKind.MineOreGems, WorkerTaskKind.FindLadder, WorkerTaskKind.MineRocks, WorkerTaskKind.Idle }), "three mining jobs and recall appear in order");
+    WorkerTaskKind.MiningExpedition, WorkerTaskKind.MineOreGems, WorkerTaskKind.FindLadder, WorkerTaskKind.MineRocks, WorkerTaskKind.Idle }), "independent production, three physical mining jobs and recall appear in order");
 foreach (WorkerProfession profession in new[] { WorkerProfession.Farmer, WorkerProfession.Forager, WorkerProfession.CombatWorker })
     foreach (WorkerTaskKind task in new[] { WorkerTaskKind.MineOreGems, WorkerTaskKind.FindLadder })
         Check(!WorkerTaskPolicy.IsTaskAllowed(profession, task), "new jobs don't broaden existing professions");

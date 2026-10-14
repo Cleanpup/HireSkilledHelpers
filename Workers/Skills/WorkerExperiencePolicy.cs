@@ -83,11 +83,15 @@ internal static class WorkerExperiencePolicy
 
     public static bool TryAwardExploration(WorkerRosterEntry worker, bool isHost, bool isWorldReady)
     {
-        if (!isHost || !isWorldReady || worker.Profession != WorkerProfession.CombatWorker
-            || worker.AssignedTask != WorkerTaskKind.ExploreArea)
+        bool mining = worker.Profession == WorkerProfession.Miner && worker.AssignedTask == WorkerTaskKind.MiningExpedition;
+        bool combat = worker.Profession == WorkerProfession.CombatWorker && worker.AssignedTask == WorkerTaskKind.ExploreArea;
+        if (!isHost || !isWorldReady || (!mining && !combat))
             return false;
         worker.Experience ??= new();
-        worker.Experience.Combat = AddExperience(worker.Experience.Combat, WorkerExplorationPolicy.CombatExperiencePerRun);
+        if (mining)
+            worker.Experience.Mining = AddExperience(worker.Experience.Mining, WorkerExplorationPolicy.MiningExperiencePerRun);
+        else
+            worker.Experience.Combat = AddExperience(worker.Experience.Combat, WorkerExplorationPolicy.CombatExperiencePerRun);
         return true;
     }
 

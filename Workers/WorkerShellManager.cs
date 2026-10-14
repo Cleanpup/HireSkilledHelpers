@@ -502,7 +502,7 @@ internal sealed class WorkerShellManager
         if (!this.CanManageWorkers(out message))
             return false;
         WorkerRosterEntry? entry = this.GetWorkerEntry(workerId);
-        if (entry is null || entry.Profession != WorkerProfession.CombatWorker || !WorkerExplorationAreaCatalog.IsValid(area))
+        if (entry is null || entry.Profession is not (WorkerProfession.CombatWorker or WorkerProfession.Miner) || !WorkerExplorationAreaCatalog.IsValid(area))
         {
             message = "That exploration area is not available for this worker.";
             return false;
@@ -511,7 +511,7 @@ internal sealed class WorkerShellManager
         entry.ExplorationArea = area;
         WorkerTaskPolicy.AssignTask(entry, WorkerTaskKind.Idle, Game1.Date.TotalDays);
         this.PersistRoster();
-        message = $"{entry.DisplayName} will explore {WorkerExplorationAreaCatalog.GetLabel(area)}. Choose Explore Area to begin.";
+        message = $"{entry.DisplayName}: {WorkerExplorationAreaCatalog.GetLabel(area)}. Choose {(entry.Profession == WorkerProfession.Miner ? "Independent mining" : "Explore Area")} to begin.";
         return true;
     }
 
@@ -1201,7 +1201,8 @@ internal sealed class WorkerShellManager
             WorkerTaskPolicy.NormalizeCompletedOrder(normalized, Game1.Date.TotalDays);
             if (Context.IsMainPlayer)
                 WorkerTaskPolicy.RestoreDailyOrder(normalized, Game1.Date.TotalDays);
-            if (!WorkerForageAreaCatalog.IsValidLocation(normalized.ForageLocationName))
+            if (!WorkerForageAreaCatalog.IsValidLocation(normalized.ForageLocationName)
+                && !WorkerSveIntegration.IsKnownArea(normalized.ForageLocationName))
             {
                 normalized.ForageLocationName = WorkerForageAreaCatalog.DefaultLocationName;
             }
@@ -1212,7 +1213,7 @@ internal sealed class WorkerShellManager
             if (!WorkerExplorationAreaCatalog.IsValid(normalized.ExplorationArea))
                 normalized.ExplorationArea = WorkerExplorationAreaCatalog.Mines;
             normalized.Exploration ??= new();
-            if (!WorkerFishingAreaCatalog.IsValid(normalized.FishingArea)) normalized.FishingArea = WorkerFishingAreaCatalog.Forest;
+            if (!WorkerFishingAreaCatalog.IsKnown(normalized.FishingArea)) normalized.FishingArea = WorkerFishingAreaCatalog.Forest;
             normalized.Fishing ??= new();
             WorkerFishingPolicy.Normalize(normalized.Fishing, Game1.Date.TotalDays);
             WorkerExplorationPolicy.TagLegacyPendingLoot(normalized.Exploration, normalized.ExplorationArea);

@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
+using StardewValley.Objects;
 
 namespace HireSkilledHelpers.Workers;
 
@@ -473,7 +474,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
                 }
                 return;
             }
-            if (selectedWorker is { Profession: WorkerProfession.CombatWorker } explorer && this.explorationAreaButton.containsPoint(x, y))
+            if (selectedWorker is { Profession: WorkerProfession.CombatWorker or WorkerProfession.Miner } explorer && this.explorationAreaButton.containsPoint(x, y))
             {
                 if (this.EnsureSelectedHostWorker())
                 {
@@ -762,7 +763,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         }
         this.orderButtons.Clear();
         bool showForageArea = this.GetSelectedWorker() is { Profession: WorkerProfession.Forager or WorkerProfession.CombatWorker or WorkerProfession.Miner or WorkerProfession.Fisher };
-        bool showExplorationArea = this.GetSelectedWorker() is { Profession: WorkerProfession.CombatWorker };
+        bool showExplorationArea = this.GetSelectedWorker() is { Profession: WorkerProfession.CombatWorker or WorkerProfession.Miner };
         int areaHeight = this.ordersBounds.Height >= 220 ? 48 : 32;
         int areaRowHeight = areaHeight + 8;
         int ordersTop = this.ordersBounds.Y + (this.ordersBounds.Height >= 220 ? 56 : 8)
@@ -847,7 +848,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
                 this.allClickableComponents.AddRange(this.orderButtons);
                 if (this.GetSelectedWorker() is { Profession: WorkerProfession.Forager or WorkerProfession.CombatWorker or WorkerProfession.Miner or WorkerProfession.Fisher })
                     this.allClickableComponents.Add(this.forageAreaButton);
-                if (this.GetSelectedWorker() is { Profession: WorkerProfession.CombatWorker })
+                if (this.GetSelectedWorker() is { Profession: WorkerProfession.CombatWorker or WorkerProfession.Miner })
                     this.allClickableComponents.Add(this.explorationAreaButton);
             }
             if (this.currentTab == WorkerMenuTab.Skills)
@@ -1195,6 +1196,10 @@ internal sealed class WorkerControlMenu : IClickableMenu
                 $"Explore area: {WorkerExplorationAreaCatalog.GetLabel(combat.ExplorationArea)}",
                 enabled, Color.White, WorkerMenuArt.Icon.Explore);
         }
+        if (selectedWorker is { Profession: WorkerProfession.Miner } expeditionMiner)
+            this.DrawButton(b, this.explorationAreaButton,
+                $"Expedition: {WorkerExplorationAreaCatalog.GetLabel(expeditionMiner.ExplorationArea)}",
+                enabled, Color.White, WorkerMenuArt.Icon.Mining);
         IReadOnlyList<WorkerTaskKind> tasks = this.GetSelectedTasks();
         for (int i = 0; i < this.orderButtons.Count; i++)
         {
@@ -1330,7 +1335,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         string workerLabel = this.GetSelectedWorker()?.DisplayName ?? "Select a worker";
         this.DrawButton(b, this.destinationDropdownButton, $"{workerLabel}: {selectedLabel}",
             Context.IsMainPlayer && this.selectedWorkerId is not null, Color.White,
-            destination is null ? WorkerMenuArt.Icon.Coin : WorkerMenuArt.Icon.Chest);
+            destination is null ? WorkerMenuArt.Icon.Coin : WorkerMenuArt.Icon.Chest, chest: selectedChest?.Chest);
 
         if (!this.destinationDropdownOpen)
         {
@@ -1349,7 +1354,11 @@ internal sealed class WorkerControlMenu : IClickableMenu
             bool isSelected = index == 0 ? destination is null
                 : destination is not null && option!.LocationName == destination.LocationName && option.Tile == destination.Tile;
             this.DrawCard(b, row.bounds, isSelected || this.IsControlHighlighted(row) ? PaperShade : Paper, isSelected);
-            WorkerMenuArt.Draw(b, index == 0 ? WorkerMenuArt.Icon.Coin : WorkerMenuArt.Icon.Chest, row.bounds.X + 10, row.bounds.Y + 10, 2);
+            Rectangle iconBounds = new(row.bounds.X + 8, row.bounds.Y + 6, 32, 32);
+            if (option is not null)
+                WorkerMenuArt.DrawChest(b, option.Chest, iconBounds);
+            else
+                WorkerMenuArt.Draw(b, WorkerMenuArt.Icon.Coin, iconBounds);
             this.DrawText(b, index == 0 ? "Shipping bin (default)" : option!.Label,
                 new Rectangle(row.bounds.X + 43, row.bounds.Y + 6, row.bounds.Width - 53, row.bounds.Height - 12), Ink);
         }
@@ -1365,8 +1374,15 @@ internal sealed class WorkerControlMenu : IClickableMenu
     private void DrawFooter(SpriteBatch b)
     {
         string text = Context.IsMainPlayer ? this.feedback : "The host assigns work and pays wages. Use your menu key to close.";
-        DrawRect(b, new Rectangle(this.footerBounds.X + 5, this.footerBounds.Y + 8, 4, this.footerBounds.Height - 16), this.feedbackIsError ? Color.DarkRed : Leaf);
-        this.DrawText(b, text, new Rectangle(this.footerBounds.X + 18, this.footerBounds.Y + 6, this.payButton.bounds.Left - this.footerBounds.X - Gap - 18, this.footerBounds.Height - 12), this.feedbackIsError ? Color.DarkRed : Ink);
+        bool error = this.feedbackIsError;
+        if (this.selectedWorkerId is not null && this.runtimeSnapshots.TryGetValue(this.selectedWorkerId, out WorkerRuntimeSnapshot fishing)
+            && fishing.AssignedTask == WorkerTaskKind.Fish && fishing.State == WorkerFishingShoreSearch.NoSpotState)
+        {
+            text = fishing.Status;
+            error = true;
+        }
+        DrawRect(b, new Rectangle(this.footerBounds.X + 5, this.footerBounds.Y + 8, 4, this.footerBounds.Height - 16), error ? Color.DarkRed : Leaf);
+        this.DrawText(b, text, new Rectangle(this.footerBounds.X + 18, this.footerBounds.Y + 6, this.payButton.bounds.Left - this.footerBounds.X - Gap - 18, this.footerBounds.Height - 12), error ? Color.DarkRed : Ink);
         bool hasWorker = this.selectedWorkerId is not null;
         bool paid = hasWorker && this.workerShellManager.CanWorkerWorkToday(this.selectedWorkerId!);
         this.DrawButton(b, this.payButton, paid ? "Paid today" : $"Pay {WorkerEmploymentTerms.DailyWage}g", Context.IsMainPlayer && hasWorker && !paid, Color.White);
@@ -1429,13 +1445,19 @@ internal sealed class WorkerControlMenu : IClickableMenu
         DrawRect(b, new Rectangle(panel.X + 18, panel.Y + 50, panel.Width - 36, 2), PaperShade);
     }
 
-    private void DrawButton(SpriteBatch b, ClickableComponent button, string label, bool enabled, Color color, WorkerMenuArt.Icon? icon = null, bool selected = false)
+    private void DrawButton(SpriteBatch b, ClickableComponent button, string label, bool enabled, Color color, WorkerMenuArt.Icon? icon = null, bool selected = false, Chest? chest = null)
     {
         bool hovered = this.IsControlHighlighted(button);
         Color fill = !enabled ? new Color(211, 190, 158) : selected ? new Color(245, 216, 145) : hovered ? new Color(255, 236, 187) : color == Color.White ? Paper : color;
         this.DrawCard(b, button.bounds, fill, selected);
         int textX = button.bounds.X + 10;
-        if (icon is WorkerMenuArt.Icon motif && button.bounds.Width >= 135)
+        if (chest is not null && button.bounds.Width >= 135)
+        {
+            WorkerMenuArt.DrawChest(b, chest, new Rectangle(button.bounds.X + 8,
+                button.bounds.Y + (button.bounds.Height - 32) / 2, 32, 32), enabled ? 1f : 0.5f);
+            textX += 34;
+        }
+        else if (icon is WorkerMenuArt.Icon motif && button.bounds.Width >= 135)
         {
             WorkerMenuArt.Draw(b, motif, new Rectangle(button.bounds.X + 12, button.bounds.Y + (button.bounds.Height - 24) / 2, 24, 24), enabled ? 1f : 0.5f);
             textX += 30;
@@ -1477,6 +1499,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
             WorkerTaskKind.MineRocks or WorkerTaskKind.MineOreGems or WorkerTaskKind.FindLadder => WorkerMenuArt.Icon.Mining,
             WorkerTaskKind.SlayMonsters => WorkerMenuArt.Icon.Combat,
             WorkerTaskKind.ExploreArea => WorkerMenuArt.Icon.Explore,
+            WorkerTaskKind.MiningExpedition => WorkerMenuArt.Icon.Mining,
             WorkerTaskKind.Fish => WorkerMenuArt.Icon.Fishing,
             _ => WorkerMenuArt.Icon.Home,
         };
@@ -1517,6 +1540,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
                 WorkerTaskKind.FindLadder => "Break stones until an exit appears",
                 WorkerTaskKind.SlayMonsters => "Fight monsters in selected area",
                 WorkerTaskKind.ExploreArea => "Explore for loot each hour",
+                WorkerTaskKind.MiningExpedition => "Produce mining loot each hour",
                 WorkerTaskKind.Fish => "Cast for fish until midnight",
                 _ => "Return to the house",
             };
@@ -1809,6 +1833,7 @@ internal sealed class WorkerControlMenu : IClickableMenu
         WorkerTaskKind.FindLadder => "Break stones until a real ladder or shaft is available in Mines or Skull Cavern, then follow when the host descends. Infested floors require the player to defeat monsters; terminal floors, Quarry and Volcano have no hidden ladder to uncover. Workers never create stairs, open gates or advance alone.",
         WorkerTaskKind.SlayMonsters => "Fight real monsters in the combat area. Mines and Skull Cavern follow the host farmer onto active floors.",
         WorkerTaskKind.Fish => "Teleport to a clear shore in the selected area and repeatedly cast until midnight. Catches are simulated every 30 active in-game minutes using location, season, time and weather. Legendary fish are excluded. Fish go to this worker's chest or shipping fallback and grant worker Fishing XP.",
+        WorkerTaskKind.MiningExpedition => "Station at the selected expedition entrance and produce mining resources every active in-game hour, from 6:00 to 22:00. Rewards scale with the host's deepest mine floor and today's shared luck. Each batch grants 5 Mining XP and goes to this worker's chest or shipping bin. No monster loot or generated floors.",
         WorkerTaskKind.ExploreArea => "Teleport to the selected dungeon entrance and explore independently for loot every in-game hour, from 6:00 to 22:00. Exploration is simulated; the worker stays at the entrance. Loot goes to this worker's selected chest or shipping-bin fallback. Completed runs grant this worker 5 Combat XP; only monster drops are collected, with stone excluded.",
         _ => "Stop the current order and return to the worker's home tile. Daily wages still apply while hired.",
     };

@@ -57,9 +57,12 @@ internal sealed class WorkerExplorationManager
     /// <returns>True when the ordinary home-return lifecycle should take over.</returns>
     public bool Update(NPC worker, string workerId, out WorkerRuntimeSnapshot snapshot)
     {
+        WorkerTaskKind task = this.shell.GetAssignedTask(workerId);
+        bool mining = task == WorkerTaskKind.MiningExpedition;
+        string activity = mining ? "Mining" : "Exploring";
         string area = this.shell.GetExplorationArea(workerId);
         string label = WorkerExplorationAreaCatalog.GetLabel(area);
-        snapshot = new(WorkerTaskKind.ExploreArea, "Waiting", $"Preparing to explore {label}", 0, null);
+        snapshot = new(task, "Waiting", $"Preparing: {activity} {label}", 0, null);
         if (!Context.IsWorldReady || !Context.IsMainPlayer)
             return false;
         if (!Game1.shouldTimePass() || Game1.activeClickableMenu is not null || Game1.CurrentEvent is not null)
@@ -85,7 +88,7 @@ internal sealed class WorkerExplorationManager
             if (WorkerCombatPolicy.ShouldBeginReturn(Game1.timeOfDay)) return true;
             if (WorkerExplorationPolicy.ObserveClock(progress, Game1.Date.TotalDays, Game1.timeOfDay, accrue: false))
                 this.shell.RecordExplorationProgress(workerId, progress);
-            snapshot = new(WorkerTaskKind.ExploreArea, "Unavailable", reason ?? "The dungeon entrance is unavailable", 0, null);
+            snapshot = new(task, "Unavailable", reason ?? "The dungeon entrance is unavailable", 0, null);
             return false;
         }
 
@@ -98,7 +101,7 @@ internal sealed class WorkerExplorationManager
             this.retryAfter[workerId] = Game1.ticks + 120;
             if (!this.TryChooseEntranceTile(entrance, worker, area, out Point tile))
             {
-                snapshot = new(WorkerTaskKind.ExploreArea, "Waiting", "No clear tile at the dungeon entrance", 0, null);
+                snapshot = new(task, "Waiting", "No clear tile at the dungeon entrance", 0, null);
                 return false;
             }
             this.navigation.StopWorker(worker);
@@ -128,11 +131,14 @@ internal sealed class WorkerExplorationManager
             progress = this.shell.GetExplorationProgress(workerId);
             int seed = unchecked((int)Game1.uniqueIDForThisGame + progress.Day * 397 + progress.CompletedRuns * 7919);
             foreach (char c in workerId + area) seed = unchecked(seed * 31 + c);
-            List<WorkerExplorationLoot> loot = WorkerExplorationPolicy.RollLoot(area, new Random(seed), Game1.MasterPlayer.deepestMineLevel,
-                Game1.MasterPlayer.mailReceived.Contains("slimeHutchBuilt"));
+            List<WorkerExplorationLoot> loot = mining
+                ? WorkerMiningLootCatalog.Roll(area, new Random(seed), Game1.MasterPlayer.deepestMineLevel,
+                    Game1.MasterPlayer.team.sharedDailyLuck.Value)
+                : WorkerExplorationPolicy.RollLoot(area, new Random(seed), Game1.MasterPlayer.deepestMineLevel,
+                    Game1.MasterPlayer.mailReceived.Contains("slimeHutchBuilt"));
             if (!this.shell.TryCompleteExploration(workerId, progress, loot))
                 break;
-            this.monitor.Log($"{worker.displayName} completed simulated exploration #{progress.CompletedRuns} in {label}: "
+            this.monitor.Log($"{worker.displayName} completed {activity} expedition #{progress.CompletedRuns} in {label}: "
                 + string.Join(", ", loot.Select(item => $"{item.ItemId} x{item.Stack}")) + ".", LogLevel.Info);
             if (!this.DeliverPendingLoot(workerId))
                 break;
@@ -143,8 +149,8 @@ internal sealed class WorkerExplorationManager
             this.Stop(workerId);
             return true;
         }
-        snapshot = new(WorkerTaskKind.ExploreArea, "Exploring",
-            $"Exploring {label}: {Math.Min(progress.Minutes, 60)}/60 minutes", progress.CompletedRuns, null);
+        snapshot = new(task, activity,
+            $"{activity} {label}: {Math.Min(progress.Minutes, 60)}/60 minutes", progress.CompletedRuns, null);
         return false;
     }
 

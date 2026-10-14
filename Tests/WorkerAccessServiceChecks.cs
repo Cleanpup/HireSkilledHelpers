@@ -5,8 +5,8 @@ using StardewValley;
 
 internal static class WorkerAccessServiceChecks
 {
-    private const string MirrorKey = "Test.Workers/WorkerFeaturesUnlocked";
-    private const string SaveKey = "Test.Workers.WorkerPermit";
+    private const string MirrorKey = "Cleanpup.FarmingCapitalist/WorkerFeaturesUnlocked";
+    private const string SaveKey = "Cleanpup.FarmingCapitalist.WorkerPermit";
     private static void Check(bool value, string scenario)
     {
         if (!value) throw new Exception(scenario);

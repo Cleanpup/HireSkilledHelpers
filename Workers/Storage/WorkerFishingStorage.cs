@@ -12,7 +12,7 @@ internal static class WorkerFishingStorage
         while (progress.PendingCatches.Count > 0)
         {
             WorkerFishingCatch caught = progress.PendingCatches[0];
-            if (!WorkerFishingCatchCatalog.IsAllowed(caught.ItemId))
+            if (!WorkerFishingCatchCatalog.IsPersistable(caught))
             {
                 progress.PendingCatches.RemoveAt(0);
                 persist();
@@ -21,6 +21,11 @@ internal static class WorkerFishingStorage
             Item? item = null;
             try
             {
+                if (ItemRegistry.GetData(caught.ItemId) is null)
+                {
+                    error = $"Item {caught.ItemId} is unavailable; restore its content mod. The catch is preserved.";
+                    return false;
+                }
                 item = ItemRegistry.Create(caught.ItemId);
                 WorkerItemStorage.Store(item, destination, monitor);
                 progress.PendingCatches.RemoveAt(0);

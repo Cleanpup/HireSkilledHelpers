@@ -7,7 +7,7 @@ using StardewValley.Objects;
 
 namespace HireSkilledHelpers.Workers;
 
-internal sealed record WorkerChestOption(string LocationName, string LocationLabel, Point Tile)
+internal sealed record WorkerChestOption(string LocationName, string LocationLabel, Point Tile, Chest Chest)
 {
     public string Label => $"{this.LocationLabel} ({this.Tile.X}, {this.Tile.Y})";
 
@@ -38,7 +38,7 @@ internal static class WorkerChestCatalog
             foreach (KeyValuePair<Vector2, StardewValley.Object> pair in location.Objects.Pairs)
             {
                 if (pair.Value is Chest chest && IsUsableChest(chest))
-                    options.Add(new WorkerChestOption(locationName, label, pair.Key.ToPoint()));
+                    options.Add(new WorkerChestOption(locationName, label, pair.Key.ToPoint(), chest));
             }
             return true;
         }, includeInteriors: true, includeGenerated: true);

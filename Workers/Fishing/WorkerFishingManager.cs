@@ -8,6 +8,7 @@ namespace HireSkilledHelpers.Workers;
 /// <summary>Host simulation at permanent shores, with read-only rod/line rendering on every peer.</summary>
 internal sealed class WorkerFishingManager
 {
+    internal const string NoSpotKey = "Cleanpup.HireSkilledHelpers/NoFarmFishingSpot";
     internal const string VisualKey = "Cleanpup.FarmingCapitalist/FishingCast";
     private readonly WorkerShellManager shell;
     private readonly WorkerNavigationManager navigation;
@@ -15,6 +16,7 @@ internal sealed class WorkerFishingManager
     private readonly Dictionary<string, (GameLocation Location, Point Shore, Point Water)> stationed = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> retryAfter = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<NPC> posed = new();
+    private readonly Dictionary<string, string> deliveryErrors = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> reportedBlockedShores = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> castTicks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -24,10 +26,11 @@ internal sealed class WorkerFishingManager
     public void Reset()
     {
         if (Context.IsWorldReady && Context.IsMainPlayer)
-            foreach (NPC worker in this.shell.GetSpawnedWorkers(recoverStale: false)) worker.modData.Remove(VisualKey);
+            foreach (NPC worker in this.shell.GetSpawnedWorkers(recoverStale: false))
+            { worker.modData.Remove(VisualKey); worker.modData.Remove(NoSpotKey); }
         foreach (NPC worker in this.posed)
             if (worker.Sprite is not null) worker.Sprite.CurrentFrame = WorkerCombatSwingPolicy.DirectionRow(worker.FacingDirection) * 4;
-        this.posed.Clear();
+        this.posed.Clear(); this.deliveryErrors.Clear();
         this.stationed.Clear(); this.retryAfter.Clear(); this.castTicks.Clear(); this.reportedBlockedShores.Clear();
     }
 
@@ -37,6 +40,7 @@ internal sealed class WorkerFishingManager
         if (this.shell.TryGetWorker(workerId, out NPC? worker) && worker is not null && Context.IsMainPlayer)
         {
             worker.modData.Remove(VisualKey);
+            worker.modData.Remove(NoSpotKey);
             if (this.posed.Remove(worker) && worker.Sprite is not null)
                 worker.Sprite.CurrentFrame = WorkerCombatSwingPolicy.DirectionRow(worker.FacingDirection) * 4;
         }
@@ -58,7 +62,12 @@ internal sealed class WorkerFishingManager
         WorkerFishingProgress progress = this.shell.GetFishingProgress(workerId);
         bool delivered = WorkerFishingStorage.TryDeliver(progress, this.shell.GetHarvestDestination(workerId), this.monitor,
             () => this.shell.RecordFishingProgress(workerId, progress), out string error);
-        if (!delivered) this.monitor.Log($"{workerId} fishing delivery deferred; catches remain saved: {error}", LogLevel.Warn);
+        if (delivered) this.deliveryErrors.Remove(workerId);
+        else if (this.deliveryErrors.GetValueOrDefault(workerId) != error)
+        {
+            this.deliveryErrors[workerId] = error;
+            this.monitor.Log($"{workerId} fishing delivery deferred; catches remain saved: {error}", LogLevel.Warn);
+        }
         return delivered;
     }
 
@@ -89,16 +98,24 @@ internal sealed class WorkerFishingManager
             if (WorkerFishingPolicy.ObserveClock(progress, Game1.Date.TotalDays, Game1.timeOfDay, accrue: false))
                 this.shell.RecordFishingProgress(workerId, progress);
             // Preserve the reason throughout the retry cooldown instead of replacing it with Preparing.
-            snapshot = snapshot with { Status = "Waiting for clear fishable shoreline" };
+            bool farmHasNoSpot = area == WorkerFishingAreaCatalog.Farm && this.reportedBlockedShores.Contains(workerId);
+            snapshot = snapshot with { State = farmHasNoSpot ? WorkerFishingShoreSearch.NoSpotState : "Waiting",
+                Status = farmHasNoSpot ? WorkerFishingShoreSearch.NoFarmSpotMessage : "Waiting for clear fishable shoreline" };
             if (this.retryAfter.GetValueOrDefault(workerId) > Game1.ticks) return false;
-            this.retryAfter[workerId] = Game1.ticks + 120;
+            this.retryAfter[workerId] = Game1.ticks + (area == WorkerFishingAreaCatalog.Farm ? 600 : 120);
             if (!this.TryChooseShore(location, worker, area, out Point shore, out Point water))
             {
+                if (area == WorkerFishingAreaCatalog.Farm)
+                {
+                    worker.modData[NoSpotKey] = "true";
+                    snapshot = snapshot with { State = WorkerFishingShoreSearch.NoSpotState, Status = WorkerFishingShoreSearch.NoFarmSpotMessage };
+                }
                 if (this.reportedBlockedShores.Add(workerId))
-                    this.monitor.Log($"{worker.displayName} is waiting for clear fishable shoreline in {location.NameOrUniqueName} near {WorkerFishingAreaCatalog.Anchor(area)}; no safe shore/cast pair within 12 tiles.", LogLevel.Info);
+                    this.monitor.Log($"{worker.displayName} is waiting for clear fishable shoreline in {location.NameOrUniqueName} near {WorkerFishingAreaCatalog.Anchor(area)}; no safe shore/cast pair in the search area.", LogLevel.Info);
                 return false;
             }
             this.reportedBlockedShores.Remove(workerId);
+            worker.modData.Remove(NoSpotKey);
             this.navigation.StopWorker(worker);
             Game1.warpCharacter(worker, location.NameOrUniqueName, shore);
             this.navigation.ApplyIdlePose(worker);
@@ -131,8 +148,11 @@ internal sealed class WorkerFishingManager
             progress = this.shell.GetFishingProgress(workerId);
             int seed = unchecked((int)Game1.uniqueIDForThisGame + progress.Day * 397 + progress.CompletedAttempts * 7919);
             foreach (char c in workerId + area) seed = unchecked(seed * 31 + c);
-            WorkerFishingCatch? caught = WorkerFishingCatchCatalog.Roll(area, location.GetSeason().ToString(), Game1.timeOfDay,
-                location.IsRainingHere(), WorkerExperiencePolicy.GetLevel(this.shell.GetWorkerExperience(workerId).Fishing), new Random(seed));
+            int level = WorkerExperiencePolicy.GetLevel(this.shell.GetWorkerExperience(workerId).Fishing);
+            WorkerFishingCatch? caught = (WorkerSveIntegration.Enabled || area == WorkerFishingAreaCatalog.Farm)
+                ? WorkerLocationFishing.Roll(location, station.Shore, station.Water, level, progress.CompletedAttempts, new Random(seed))
+                : WorkerFishingCatchCatalog.Roll(area, location.GetSeason().ToString(), Game1.timeOfDay,
+                    location.IsRainingHere(), level, new Random(seed));
             if (!this.shell.TryCompleteFishing(workerId, progress, caught)) break;
             if (!this.Deliver(workerId)) break;
             progress = this.shell.GetFishingProgress(workerId);
@@ -142,13 +162,13 @@ internal sealed class WorkerFishingManager
     }
 
     private bool IsSafeShore(GameLocation location, NPC worker, string area, Point shore, Point water, bool checkActors = true)
-        => WorkerFishingShorePolicy.IsAllowedShore(area, shore.X, shore.Y)
+        => (WorkerSveIntegration.Enabled || WorkerFishingShorePolicy.IsAllowedShore(area, shore.X, shore.Y))
             && location.hasTileAt(shore.X, shore.Y, "Back")
             && (checkActors ? this.navigation.IsWalkableWorkTile(location, worker, shore) : this.navigation.IsTraversableWorkTile(location, worker, shore))
             && !location.isWaterTile(shore.X, shore.Y)
             && (area != WorkerFishingAreaCatalog.Beach
                 || (!location.hasTileAt(shore.X, shore.Y, "Front") && !location.hasTileAt(shore.X, shore.Y, "AlwaysFront")))
-            && location.isTileFishable(water.X, water.Y)
+            && IsEligibleFishableWater(location, area, water.X, water.Y)
             && WorkerFishingShorePolicy.IsContinuousWaterCast(shore.X, shore.Y, water.X, water.Y,
                 (x, y) => IsWaterForCast(location, x, y))
             && !location.warps.Any(warp => Math.Abs(warp.X - shore.X) + Math.Abs(warp.Y - shore.Y) <= 1)
@@ -161,33 +181,85 @@ internal sealed class WorkerFishingManager
         => location.hasTileAt(x, y, "Back") && (location.isWaterTile(x, y) || location.isTileFishable(x, y));
 
     private static bool IsEligibleFishableWater(GameLocation location, string area, int x, int y)
-        => location.isTileFishable(x, y) && (area != WorkerFishingAreaCatalog.Forest
+        => location.isTileFishable(x, y)
+            && (area != WorkerFishingAreaCatalog.Farm || !location.isTileBuildingFishable(x, y))
+            && (area != WorkerFishingAreaCatalog.Forest
             || (location.TryGetFishAreaForTile(new Vector2(x, y), out string fishArea, out _) && fishArea == "River"));
 
     private bool TryChooseShore(GameLocation location, NPC worker, string area, out Point shore, out Point water)
     {
-        Point anchor = WorkerFishingAreaCatalog.Anchor(area);
+        Point anchor = WorkerSveIntegration.IsKnownArea(area)
+            ? location.GetData()?.DefaultArrivalTile ?? Point.Zero : WorkerFishingAreaCatalog.Anchor(area);
         Point[] offsets = { new(0, 1), new(1, 0), new(0, -1), new(-1, 0) };
-        // Bounded scan supports edited maps without assuming an authored tile remains safe.
-        for (int radius = 0; radius <= 12; radius++)
-        for (int dy = -radius; dy <= radius; dy++)
-        for (int dx = -radius; dx <= radius; dx++)
+        IEnumerable<Point> candidates = area == WorkerFishingAreaCatalog.Farm
+            ? this.GetFarmShoreCandidates(location, worker) : GetShoreCandidates(location, anchor);
+        (Point Shore, Point Water)? fallback = null;
+        foreach (Point candidate in candidates)
         {
-            if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != radius) continue;
-            Point candidate = new(anchor.X + dx, anchor.Y + dy);
             foreach (Point offset in offsets)
             {
                 // Vanilla often draws a nonfishable border in the Buildings layer over
                 // the first water tile. Cast beyond that border without crossing land.
                 if (!WorkerFishingShorePolicy.TryFindCast(candidate.X, candidate.Y, offset.X, offset.Y,
                     (x, y) => IsWaterForCast(location, x, y),
-                    (x, y) => IsEligibleFishableWater(location, area, x, y), out var castTile)) continue;
+                    (x, y) => IsEligibleFishableWater(location, area, x, y), out var castTile, preferLongest: WorkerSveIntegration.Enabled || area == WorkerFishingAreaCatalog.Farm)) continue;
                 Point cast = new(castTile.X, castTile.Y);
                 if (!this.IsSafeShore(location, worker, area, candidate, cast)) continue;
+                if (area == WorkerFishingAreaCatalog.Farm && !WorkerLocationFishing.HasFishPoolAt(location, candidate, cast))
+                {
+                    fallback ??= (candidate, cast);
+                    continue;
+                }
                 shore = candidate; water = cast; return true;
             }
         }
+        if (fallback.HasValue) { shore = fallback.Value.Shore; water = fallback.Value.Water; return true; }
         shore = water = Point.Zero; return false;
+    }
+
+    private IEnumerable<Point> GetFarmShoreCandidates(GameLocation location, NPC worker)
+    {
+        var back = location.Map.GetLayer("Back");
+        if (back is null) yield break;
+        Point entry = worker.currentLocation == location ? worker.TilePoint : Game1.getFarm().GetMainFarmHouseEntry();
+        bool Traversable(Point tile) => !location.isWaterTile(tile.X, tile.Y)
+            && this.navigation.IsTraversableWorkTile(location, worker, tile);
+        // The farmhouse doorway itself may be a warp/barrier. Start immediately outside it.
+        if (!Traversable(entry))
+        {
+            Point[] nearby = { entry + new Point(0, 1), entry + new Point(1, 0), entry + new Point(-1, 0), entry + new Point(0, -1) };
+            Point? clear = nearby.Where(Traversable).Select(p => (Point?)p).FirstOrDefault();
+            if (clear is null) yield break;
+            entry = clear.Value;
+        }
+        foreach (Point tile in WorkerFishingShoreSearch.ReachableTiles(back.LayerWidth, back.LayerHeight, entry, Traversable))
+            yield return tile;
+    }
+
+    private static IEnumerable<Point> GetShoreCandidates(GameLocation location, Point anchor)
+    {
+        if (!WorkerSveIntegration.Enabled)
+        {
+            for (int radius = 0; radius <= 12; radius++)
+            for (int dy = -radius; dy <= radius; dy++)
+            for (int dx = -radius; dx <= radius; dx++)
+                if (Math.Max(Math.Abs(dx), Math.Abs(dy)) == radius)
+                    yield return new(anchor.X + dx, anchor.Y + dy);
+            yield break;
+        }
+        var back = location.Map.GetLayer("Back");
+        if (back is null) yield break;
+        // Large SVE maps relocate shores. Filter for land beside water before costly collision checks.
+        var candidates = new List<Point>();
+        for (int y = 0; y < back.LayerHeight; y++)
+        for (int x = 0; x < back.LayerWidth; x++)
+        {
+            if (!location.hasTileAt(x, y, "Back") || location.isWaterTile(x, y)) continue;
+            if (IsWaterForCast(location, x - 1, y) || IsWaterForCast(location, x + 1, y)
+                || IsWaterForCast(location, x, y - 1) || IsWaterForCast(location, x, y + 1)) candidates.Add(new(x, y));
+        }
+        foreach (Point point in candidates.OrderBy(p => Math.Abs(p.X - anchor.X) + Math.Abs(p.Y - anchor.Y)))
+            yield return point;
     }
 
     public void UpdateVisuals()

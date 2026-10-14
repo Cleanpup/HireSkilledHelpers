@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewValley;
+using StardewValley.Objects;
 
 namespace HireSkilledHelpers.Workers;
 
@@ -51,6 +52,54 @@ internal static class WorkerMenuArt
             source = data.GetSourceRect();
         }
         DrawSprite(batch, texture, source, bounds, opacity);
+    }
+
+    /// <summary>Draw a closed chest using the same dye and hardware layers as vanilla Chest.draw.</summary>
+    internal static void DrawChest(SpriteBatch batch, Chest chest, Rectangle bounds, float opacity = 1f)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+        var data = ItemRegistry.GetDataOrErrorItem(chest.QualifiedItemId);
+        Texture2D texture = data.GetTexture();
+        Color dye = chest.playerChoiceColor.Value;
+        bool dyeable = chest.QualifiedItemId is "(BC)130" or "(BC)232" or "(BC)BigChest" or "(BC)BigStoneChest";
+        if (!dyeable || dye == Color.Black)
+        {
+            // Black is the game's sentinel for the original wood/stone colour, not black paint.
+            DrawSprite(batch, texture, data.GetSourceRect(), bounds, opacity);
+            return;
+        }
+
+        int bodyIndex = chest.ParentSheetIndex;
+        int lidIndex = chest.startingLidFrame.Value;
+        int hardwareIndex = lidIndex + 8;
+        if (chest.QualifiedItemId == "(BC)130")
+        {
+            bodyIndex = 168;
+            hardwareIndex = lidIndex + 46;
+            lidIndex += 38;
+        }
+        else if (chest.QualifiedItemId == "(BC)BigChest")
+        {
+            bodyIndex = 312;
+            hardwareIndex = lidIndex + 16;
+            lidIndex += 8;
+        }
+
+        // Fit all layers together; drawing each separately would recenter the feet overlay.
+        // Read the live colour without changing the placed chest's lid, position or state.
+        Rectangle body = data.GetSourceRect(0, bodyIndex);
+        float scale = Math.Min((float)bounds.Width / body.Width, (float)bounds.Height / body.Height);
+        if (scale >= 1f) scale = MathF.Floor(scale);
+        Vector2 position = new(bounds.X + (bounds.Width - body.Width * scale) / 2f,
+            bounds.Y + (bounds.Height - body.Height * scale) / 2f);
+        batch.Draw(texture, position, body, dye * opacity, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+        batch.Draw(texture, position, data.GetSourceRect(0, lidIndex), dye * opacity,
+            0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+        batch.Draw(texture, position + new Vector2(0, 21 * scale),
+            new Rectangle(0, bodyIndex / 8 * 32 + 53, 16, 11), Color.White * opacity,
+            0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+        batch.Draw(texture, position, data.GetSourceRect(0, hardwareIndex), Color.White * opacity,
+            0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
     }
 
     internal static void DrawSprite(SpriteBatch batch, Texture2D texture, Rectangle source, Rectangle bounds, float opacity = 1f)

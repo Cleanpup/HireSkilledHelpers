@@ -14,9 +14,8 @@ internal static class WorkerExplorationLootStorage
             WorkerExplorationLoot drop = progress.PendingLoot[0];
             if (!WorkerExplorationPolicy.IsAllowedPendingLoot(drop))
             {
-                // The revised order explicitly forbids old simulated mining
-                // rewards. Remove only queued items, never existing player stock.
-                monitor.Log($"Cancelled obsolete simulated exploration reward {drop.ItemId} x{drop.Stack}; it is outside the monster-only loot policy.", LogLevel.Info);
+                // Legacy Fighter rewards and tagged Miner rewards have separate allowlists.
+                monitor.Log($"Cancelled invalid expedition reward {drop.ItemId} x{drop.Stack}; it is outside its source loot policy.", LogLevel.Info);
                 progress.PendingLoot.RemoveAt(0);
                 persist();
                 continue;

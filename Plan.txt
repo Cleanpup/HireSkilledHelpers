@@ -194,3 +194,76 @@ U. Hire Skilled Helpers rebrand — released as 1.0.0
 Project/solution, assembly/entry DLL, C# namespaces, manifest display/description, source folders, install folder and release archive now use Hire Skilled Helpers / HireSkilledHelpers. The manifest UniqueID remains Cleanpup.FarmingCapitalist, along with existing save/mod-data keys, native permit event ID and public dialogue asset, so existing farms and content patches retain compatibility. Namespace-only source comparisons, the renamed solution build, worker experience/stamina/perk/profession/unlock/save checks and fishing checks passed. Git origin follows the user-renamed Cleanpup/HireSkilledHelpers GitHub repository. See TESTING.md check 107.
 
 The renamed mod starts its release numbering at 1.0.0. Manifest and project release version match; assembly/file metadata and the archive are generated from this release number. Earlier version numbers above describe development builds.
+
+Future work — optional Stardew Valley Expanded foraging support (note only)
+Add optional support for SVE locations, starting with its extended forest area. Detect SVE and available locations; keep vanilla-only installations supported. Verify actual map IDs, walkable connections, access requirements, and worker routing before exposing destinations. Test larger forest maps alongside baseline foraging productivity; this is planned work, not implemented.
+
+Next update backlog — Nexus posts reviewed 13 October 2026
+Source: https://www.nexusmods.com/stardewvalley/mods/53682?tab=posts
+Reviewed all nine comments on the single posts page. Planning only; priorities below are recommendations, not implemented features or guaranteed release scope.
+
+1. Baseline foraging productivity (high priority).
+   ziva002 reports Collect forage takes the whole day in Cindersap Forest and asks for a speed option/perk. Reproduce the job and measure travel, target selection, route retries and collection pauses before choosing a speed increase. Owner target: roughly half a day at most for ordinary reachable forage in vanilla Cindersap Forest, including travel; validate against defined forage counts and routes. Do not promise every inaccessible item or the same timing on larger modded maps.
+   Source threads: comment-177229473 and follow-up comment-177290367.
+
+2. Clearer storage chest selection (high priority).
+   JolozaHAHA finds coordinate-based chest identification difficult. Make the selected chest recognizable without memorizing coordinates; evaluate direct in-world chest selection or a preview showing chest color, location and sample contents. Preserve per-worker destinations and safe behavior if a chest is moved or removed.
+   Source thread: comment-177181221; owner acknowledged the issue in comment-177193347.
+
+3. Fishing on the player's farm (next-update request).
+   YteriWindwalker requests Fisher assignments on Beach/Riverland farms; owner agreed to add this to the next-update list. Add Farm as a supported fishing area with valid shoreline positions and catches based on the actual farm type/map. Verify different vanilla farm layouts individually; do not assume one shoreline or fish pool works for every farm. Treat custom farms as requiring separate compatibility checks.
+   Source thread: comment-177412290; owner reply comment-177421689.
+
+4. Movement-speed progression and optional tuning (balance proposal).
+   Evaluate a movement-speed perk and/or optional configurable speed after measuring baseline productivity. The player requested a speed option and welcomed a future perk; the owner previously mentioned a planned speed perk. Keep baseline workers useful without requiring the perk, and check route behavior and work animations at boosted speed. Perk threshold and multiplier remain undecided.
+   Source: ziva002 thread above; distinct from the baseline productivity fix.
+
+5. Optional SVE forest destinations (existing owner-requested future work).
+   Retain the preceding SVE note, starting with the extended forest area. The player raised concerns about productivity on larger SVE maps; the explicit compatibility feature was requested by the owner in chat. Confirm map IDs, access gates, walking connections and timing with SVE installed before claiming support. No implementation yet.
+
+Already addressed — do not count as new features:
+- zombertulio's configurable business-menu shortcut request (comment-177194121): implemented in 1.0.1 through GMCM and config.json; default remains B. Follow up on the thread to tell the requester the option shipped (owner action; no reply posted during this review).
+- Worker naming menu closes on E: fixed in 1.0.2 in earlier work. Retain input-focus regression checks, including typing the configured business-menu key. This issue was handled separately, not newly reported in these nine posts.
+
+
+V. Optional SVE integration — implemented for testing, not yet released
+This supersedes the earlier note-only SVE entry and backlog item 5. Detection uses FlashShifter.StardewValleyExpandedCP; the manifest dependency is optional. Forest West (Custom_ForestWest) and Shearwater Bridge (Custom_ShearwaterBridge) appear for Foragers and Fishers only when SVE and the outdoor maps are present. The wiki identifies Shearwater Bridge as east of Pelican Town (the requested bridge was described as west). Saved optional assignments remain recognizable if SVE/maps are removed, pause as unavailable, and can be reassigned or restored.
+
+Worker impact and item audit:
+- Forager: the two new areas use the existing actual-object collection, target revalidation, collision-aware work approaches, stamina, XP and per-worker storage. Native isForage/IsSpawnedObject gates already recognize ordinary SVE forage categories/tags, including Lucky Four Leaf Clover and Mushroom Colony. Existing axe actions use live tree drops for Birch/Fir wood, sap and seeds; these remain ordinary wood trees, not hardwood solely because their data supports a Lumberjack bonus. Placed objects, artifact spots, fixed sword/artifact rewards, tapped trees and immature trees remain excluded by existing rules. No larger-map speed multiplier is added in this compatibility pass.
+- Fisher: when SVE is installed, every supported fishing area uses its live Data/Locations plus Default entries and Data/Fish, including SVE edits to existing rivers/coast. Native spawn precedence, spawn/bite chance layers, actual bobber depth, season, time, weather, worker minimum skill, fish area/position restrictions and host story conditions apply. Kittyfish requires the installed Camilla-event condition and worker skill. Live content patches are read each cast. Workers have no bait/tackle, luck-skill or special-charm bonuses; shared daily luck applies when requested by the data. Seeded entries advance by worker attempt rather than changing host catch statistics. Catches remain normal quality, one simulation attempt per 30 game minutes, with saved once-per-cast stamina.
+- Winning non-fish, legendary/boss, limited or flag-setting quest outcomes yield no reward without rerolling into ordinary fish. Complex item queries are not invoked; they consume a selected attempt rather than calling game/player fishing callbacks. This covers SVE's direct-ID fish entries, not arbitrary custom getFish overrides or other mods' special query handlers. Pending SVE fish survive removal of their item definitions and wait for content restoration instead of becoming error items. No collection flags or player progress are awarded.
+- Farmer: existing live Crop.harvest and watering handle ordinary SVE crops planted on the player's Farm, including actual item IDs/regrowth. This does not add fruit-tree harvesting, plantation work on NPC farms or new farming destinations.
+- Miner: current physical rock/tool drops and storage retain real items at existing supported mining destinations. This pass does not add Highlands/Badlands destinations, new custom ore targeting, or expand the authored vanilla Quarry rectangle; those need their own access, boundary and resource audit.
+- Fighter: actual combat/loot remains on existing supported destinations. No new SVE combat destinations or fabricated SVE loot are added to the simulated Explore Area reward tables; those require a separate balance/access pass.
+
+Verification: mod build clean; SVE adapter fixture covers optional/missing locations, gates, live data changes, chance layers, excluded outcomes and lossless pending delivery. A 100,000-cast two-species fixture gave 5,779 Butterfish and 7,648 Puppyfish against expected 5,760 and 7,760. Existing fishing and worker experience/stamina/perk/profession/permit/mining tests pass. Corrected the access-test fixture's old Test.Workers keys to the deliberately retained save/mirror identity. Official source maps contain static shoreline candidates: Forest West 156x156 (55 shore/cast pairs) and Shearwater Bridge 60x40 (46); this is asset inspection, not runtime collision/routing proof. SVE is not installed locally; in-game checks 110–114 remain required. No deployment or release version change in this pass.
+
+References inspected 13 October 2026:
+https://stardew-valley-expanded.fandom.com/wiki/Forest_West
+https://stardew-valley-expanded.fandom.com/wiki/Shearwater_Bridge
+https://stardew-valley-expanded.fandom.com/wiki/Forage
+https://github.com/FlashShifter/StardewValleyExpanded/tree/master/Stardew%20Valley%20Expanded/%5BCP%5D%20Stardew%20Valley%20Expanded/code
+Installed Stardew Valley 1.6 GetFishFromLocationData, CheckGenericFishRequirements, FishingRod.distanceToLand, Object.isForage and SVE source LocationsData/Fish/Objects/WildTrees definitions. Installed game assets remain authoritative over potentially older wiki tables.
+
+
+W. Player-farm fishing — implemented for testing, not yet released
+Adds Your farm as a Fisher destination regardless of SVE presence. This implements backlog item 3 through the real farm map/data instead of a whitelist of farm types. A bounded walking search from the worker's current Farm position or the farmhouse entry finds reachable dry banks, preserves collision/occupancy/warp/touch-action guards, and allows only continuous short casts into fishable water. Constructed Fish Ponds are excluded. Banks with configured normal fish pools are preferred over trash-only ponds; if only trash water exists, it remains castable without invented fish. If no safe spot exists, the order waits without new casts/stamina spending, reports No accessible fishing spot on this farm in the business-menu footer, mirrors the state to farmhands and retries at a throttled interval. Clearing/reassigning can recover without altering the map.
+
+The SVE data adapter is generalized as WorkerLocationFishing. Farms use their own GetData results, including vanilla per-farm fish areas, bounded LOCATION_FISH inheritance, CanBeInherited flags, both nested/parent bite checks and FarmFishLocationOverride chances. This supports ordinary data-driven custom farms without requiring SVE. Other scripted getFish overrides and arbitrary item-query handlers remain separate compatibility work. A saved IsLiveDataCatch marker preserves validated custom-farm fish through reloads/missing definitions without permitting unvalidated new rewards. Prior SVE behavior and its checks remain covered.
+
+Validation: build clean, original fishing and SVE fixtures pass, topology checks cover no water/disconnected/bridged/blocked/reopened shores and map bounds. A 50,000-cast inheritance fixture produced 3,996 fish versus an expectation of 4,000. Tests loaded actual installed native Data/Locations and Data/Fish for all eight farm types: productive pools returned fish, Standard and Beach inland ponds returned no rewarded fish, and productive-bank detection distinguished these regions. Live collision, placement, resized menu readability and host/client testing remain checks 115–118. No deployment or release version change in this pass.
+
+
+X. Coloured storage chooser — implemented for testing, not yet released
+Storage choices now retain their live chest reference for display only. Dropdown rows and the selected destination show the actual native chest style and dye colour, including separate neutral hardware layers for wood/stone and big chests. Undyed and Junimo chests retain their native art. Location/coordinate labels and saved destination identity are unchanged. Build verification and manual check 119 cover this presentation change; in-game visual verification remains pending.
+
+
+Y. Independent Miner production — implemented for testing, not yet released
+Miners now have an Independent mining order in addition to their three physical jobs. A separate Expedition destination selects Mines, Skull Cavern or Volcano with the same unlock gates, safe permanent-entrance placement, active-hour timing (6:00–22:00), maximum 16 runs/day, return-home handling and worker-specific chest/shipping delivery as Fighter Explore Area. This is a stationary simulation, no dungeon generation or physical rock destruction, with no tool stamina charge just like Fighter exploration. Each completed batch awards 5 Mining XP and no player/Combat XP. Physical Mining area remains independent of Expedition selection. Console: workers assign <id> independentmine; workers expedition-area <id> <mines|skull|volcano> (explore-area alias retained).
+
+The shared saved expedition queue tags mining rewards explicitly; old untagged rewards remain governed by the Fighter allowlist. Finished mining batches survive reload, area/role changes and dismissal delivery, with one completion/XP award before retryable storage. Cancellation clears unfinished time but never finished rewards or the daily run counter. Paused menus/events observe the expedition clock without accruing time. Host-only assignment and production remain enforced.
+
+WorkerMiningLootCatalog uses the host's deepest recorded mine floor and team.sharedDailyLuck (clamped -0.1 to +0.1, no player charm/equipment). Mines cap ore evaluation at 119, with copper/iron/gold bands at 20/40/60/80; floor 120 adds a very rare shard. Skull uses recorded depth minus120: iridium ore share 10/20/30/40 percent at introductory/25/50/100-floor bands. Volcano is access-gated with a fixed copper/iron/gold/cinder/iridium pool, since ordinary deepestMineLevel does not record Volcano progress. Each hour rolls one 3–5-unit core resource batch plus a luck-sensitive extra unit and independent coal/gem/geode/rare-shard bonuses. No stone, bars, monster materials, quest items, artifacts or radioactive ore. All probabilities are explicit worker balance, not native per-rock chances.
+
+Subagent analysis and 7.2 million C# simulated hours verified the catalog. Expected total units per hour are 5.02/5.35/5.68 at bad/neutral/good luck, excluding at most 0.0012 rare shards/hour. Full sorted rates and source references are in MINING_PRODUCTION_RATES.txt. Regression checks cover authority, daily timing/cap, saved provenance, role changes, XP and depth/luck gates; tests for the old physical-only Miner job list were updated. In-game UI, entrances, multiplayer and delivery still need checks 120–123. No deployment, version bump or level7/10 perks in this pass.

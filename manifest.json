@@ -6,10 +6,16 @@
   "UniqueID": "Cleanpup.HireSkilledHelpers",
   "EntryDll": "HireSkilledHelpers.dll",
   "MinimumApiVersion": "4.0.0",
-  "UpdateKeys": ["Nexus:53682"],
+  "UpdateKeys": [
+    "Nexus:53682"
+  ],
   "Dependencies": [
     {
       "UniqueID": "spacechase0.GenericModConfigMenu",
+      "IsRequired": false
+    },
+    {
+      "UniqueID": "FlashShifter.StardewValleyExpandedCP",
       "IsRequired": false
     }
   ]

@@ -67,6 +67,9 @@ internal sealed class ModEntry : Mod
 
     private void OnGameLaunched(object? sender, GameLaunchedEventArgs e)
     {
+        WorkerSveIntegration.Initialize(this.Helper.ModRegistry);
+        if (WorkerSveIntegration.Enabled)
+            this.Monitor.Log("Optional SVE support enabled: Forest West, Shearwater Bridge and live fishing data.", LogLevel.Info);
         try
         {
             IGenericModConfigMenuApi? menu = this.Helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
@@ -217,11 +220,11 @@ internal sealed class ModEntry : Mod
                 + "workerpermit — queue Lewis's standalone permission cutscene early; host on the Farm\n"
                 + "workers status — list IDs, orders, activity and location\n"
                 + "workers hire [default] — hire with custom or default appearance\n"
-                + "workers assign <id> <water|harvest|tend|forage|trees|hardwood|debris|ores|ladder|mine|slay|explore|fish|idle> — assign a job\n"
+                + "workers assign <id> <water|harvest|tend|forage|trees|hardwood|debris|ores|ladder|mine|slay|explore|independentmine|fish|idle> — assign a job\n"
                 + "workers combat-area <id> <farm|mines|skull|islandfarm|volcanoentrance> — set a Fighter's area\n"
                 + "workers fishing-area <id> <forest|mountain|town|beach|island> — set simulated fishing shore\n"
                 + "workers mining-area <id> <quarry|mines|skull|volcano> — set physical mining area\n"
-                + "workers explore-area <id> <mines|skull|volcano> — set simulated exploration area\n"
+                + "workers explore-area <id> <mines|skull|volcano> — set Fighter/Miner expedition area\n"
                 + "workers dismiss <id> — dismiss one worker\n"
                 + "workers pay — retry unpaid wages without charging paid workers again\n"
                 + "Choose each worker's harvest destination in the Storage tab; the shipping bin is the default and overflow fallback. Only the host can manage workers.", LogLevel.Info);
@@ -258,6 +261,7 @@ internal sealed class ModEntry : Mod
                     "ores" or "gems" or "ore" => WorkerTaskKind.MineOreGems,
                     "ladder" or "findladder" => WorkerTaskKind.FindLadder,
                     "explore" or "explorearea" => WorkerTaskKind.ExploreArea,
+                    "independentmine" or "miningexpedition" => WorkerTaskKind.MiningExpedition,
                     "fish" or "fishing" => WorkerTaskKind.Fish,
                     "idle" or "stop" => WorkerTaskKind.Idle,
                     _ => null,
@@ -320,6 +324,7 @@ internal sealed class ModEntry : Mod
                 bool changed = this.workerBehaviorManager.TrySetCombatArea(args[1], area, out string areaMessage);
                 this.Monitor.Log(areaMessage, changed ? LogLevel.Info : LogLevel.Warn);
                 break;
+            case "expedition-area" when args.Length == 3:
             case "explore-area" when args.Length == 3:
                 if (!this.RequireHost()) return;
                 string? explorationArea = args[2].ToLowerInvariant() switch

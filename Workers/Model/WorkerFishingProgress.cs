@@ -4,7 +4,9 @@ internal sealed class WorkerFishingCatch
 {
     public string ItemId { get; set; } = "";
     public int Experience { get; set; }
-    public WorkerFishingCatch Clone() => new() { ItemId = this.ItemId, Experience = this.Experience };
+    // Retain validated custom-farm fish across reloads/removal of their content pack.
+    public bool IsLiveDataCatch { get; set; }
+    public WorkerFishingCatch Clone() => new() { ItemId = this.ItemId, Experience = this.Experience, IsLiveDataCatch = this.IsLiveDataCatch };
 }
 
 /// <summary>Simulation time and completed, undelivered catches; never a live fishing rod.</summary>

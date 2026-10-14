@@ -79,3 +79,31 @@ Check(!WorkerFishingShorePolicy.IsAllowedShore("Beach", 29, 28), "Beach roof adm
 Check(WorkerFishingShorePolicy.IsAllowedShore("Beach", 35, 36), "Beach dock rejected as a fishing shore");
 Check(!WorkerFishingShorePolicy.IsAllowedShore("Beach", 35, 35), "Beach inland walkway admitted as a fishing shore");
 Console.WriteLine("Fishing checks passed: shoreline border casts, dry-gap/reach rejection, authority, timing, no-catch, stale completion, persistence, XP, legendary exclusions, season/time/weather/location gates.");
+
+// A saved SVE catch remains recoverable even before the optional content is registered.
+const string sveFish = "(O)FlashShifter.StardewValleyExpandedCP_Kittyfish";
+WorkerFishingProgress optionalLoot = new() { PendingCatches = new() { new() { ItemId = sveFish } } };
+WorkerFishingPolicy.Normalize(optionalLoot, 1);
+Check(optionalLoot.PendingCatches.Count == 1, "Missing SVE content erased an earned catch");
+Check(!WorkerFishingCatchCatalog.IsAllowed(sveFish), "Persistence must not authorize new unvalidated fish");
+WorkerFishingCatchCatalog.RegisterLiveFish(sveFish, 31);
+Check(WorkerFishingCatchCatalog.IsAllowed(sveFish) && WorkerFishingCatchCatalog.Experience(sveFish) == 31,
+    "Live SVE fish must use validated XP");
+WorkerFishingCatchCatalog.RegisterLiveFish("(O)FlashShifter.StardewValleyExpandedCP_Wolf_Snapper", 500);
+Check(!WorkerFishingCatchCatalog.IsAllowed("(O)FlashShifter.StardewValleyExpandedCP_Wolf_Snapper"), "SVE boss fish admitted");
+Check(WorkerFishingShorePolicy.TryFindCast(1, 1, 1, 0, (x,y) => x >= 2 && x <= 4,
+    (x,y) => x >= 3, out var longestCast, preferLongest: true) && longestCast == (4, 1),
+    "SVE casts should use reachable depth without crossing dry land");
+Console.WriteLine("Optional fishing persistence and longer-cast checks passed.");
+
+WorkerFishingProgress malformedOptionalLoot = new() { PendingCatches = new() { new() { ItemId = null! }, new() { ItemId = "" } } };
+WorkerFishingPolicy.Normalize(malformedOptionalLoot, 1);
+Check(malformedOptionalLoot.PendingCatches.Count == 0, "Malformed legacy catch IDs must not crash normalization");
+
+WorkerFishingProgress customFarmLoot = new() { PendingCatches = new() { new() { ItemId = "(O)Example.CustomFarm_Fish", IsLiveDataCatch = true } } };
+var savedCustomFarmLoot = System.Text.Json.JsonSerializer.Deserialize<WorkerFishingProgress>(System.Text.Json.JsonSerializer.Serialize(customFarmLoot))!;
+WorkerFishingPolicy.Normalize(savedCustomFarmLoot, 1);
+Check(savedCustomFarmLoot.PendingCatches.Count == 1 && savedCustomFarmLoot.Clone().PendingCatches[0].IsLiveDataCatch,
+    "Custom farm catches must survive JSON reload and cloning without a runtime species registration");
+Check(!WorkerFishingCatchCatalog.IsAllowed("(O)Example.CustomFarm_Fish"), "Saved marker must not authorize a new unvalidated catch");
+Console.WriteLine("Custom farm fish save/reload checks passed.");
